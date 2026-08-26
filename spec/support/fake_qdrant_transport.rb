@@ -16,6 +16,10 @@ class FakeQdrantTransport
     request(:post, path, body)
   end
 
+  def patch(path, body)
+    request(:patch, path, body)
+  end
+
   def get(path)
     request(:get, path, nil)
   end

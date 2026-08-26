@@ -200,4 +200,70 @@ RSpec.describe QdrantClient do
       expect(transport.requests.last[:body]).not_to have_key(:filter)
     end
   end
+
+  describe 'otimização da busca vetorial' do
+    describe '#create_collection' do
+      it 'sends the HNSW configuration when given' do
+        client.create_collection('documentos', vector_size: 384, hnsw: { m: 32, ef_construct: 200 })
+
+        expect(transport.requests.last[:body][:hnsw_config]).to eq(m: 32, ef_construct: 200)
+      end
+
+      it 'sends the quantization configuration when given' do
+        quantization = { scalar: { type: 'int8', quantile: 0.99, always_ram: true } }
+
+        client.create_collection('documentos', vector_size: 384, quantization: quantization)
+
+        expect(transport.requests.last[:body][:quantization_config]).to eq(quantization)
+      end
+
+      it 'omits both configurations when they are not given' do
+        client.create_collection('documentos', vector_size: 384)
+
+        expect(transport.requests.last[:body].keys).to eq([:vectors])
+      end
+    end
+
+    describe '#search' do
+      it 'sends the search params when given' do
+        client.search('documentos', vector: [0.1], params: { hnsw_ef: 128, exact: true })
+
+        expect(transport.requests.last[:body][:params]).to eq(hnsw_ef: 128, exact: true)
+      end
+
+      it 'sends the quantization rescore option' do
+        client.search('documentos', vector: [0.1], params: { quantization: { rescore: true } })
+
+        expect(transport.requests.last[:body][:params]).to eq(quantization: { rescore: true })
+      end
+
+      it 'omits the params key when no tuning is requested' do
+        client.search('documentos', vector: [0.1])
+
+        expect(transport.requests.last[:body]).not_to have_key(:params)
+      end
+
+      it 'omits the params key when an empty hash is given' do
+        client.search('documentos', vector: [0.1], params: {})
+
+        expect(transport.requests.last[:body]).not_to have_key(:params)
+      end
+    end
+
+    describe '#update_collection' do
+      it 'sends a PATCH request with the new hnsw and optimizers configuration' do
+        client.update_collection('documentos', hnsw: { ef_construct: 256 }, optimizers: { indexing_threshold: 20_000 })
+
+        expect(transport.requests.last).to eq(
+          method: :patch,
+          path: '/collections/documentos',
+          body: { hnsw_config: { ef_construct: 256 }, optimizers_config: { indexing_threshold: 20_000 } }
+        )
+      end
+
+      it 'raises when nothing is given to update' do
+        expect { client.update_collection('documentos') }.to raise_error(ArgumentError)
+      end
+    end
+  end
 end

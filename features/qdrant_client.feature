@@ -36,6 +36,22 @@ Funcionalidade: Cliente do Qdrant
     Então a coleção "documentos" deve existir
     E a contagem de pontos da coleção "documentos" deve ser 42
 
+  Cenário: Coleção criada com índice otimizado para busca vetorial
+    Dado que o Qdrant está disponível
+    Quando eu crio a coleção "documentos" com hnsw m=32 ef=200 e quantização "int8"
+    Então a coleção "documentos" deve ter índice hnsw com m 32 e ef_construct 200
+    E a coleção "documentos" deve usar quantização escalar "int8"
+
+  Cenário: Ajuste da precisão da busca em tempo de consulta
+    Dado que o Qdrant está disponível
+    Quando eu busco na coleção "documentos" o vetor "0.1,0.2,0.3" com hnsw_ef 128
+    Então a busca deve ter usado hnsw_ef 128
+
+  Cenário: Ajuste do índice de uma coleção já existente
+    Dado que o Qdrant está disponível
+    Quando eu ajusto a coleção "documentos" para ef_construct 256
+    Então o ajuste deve ter sido enviado como PATCH para a coleção "documentos"
+
   Cenário: Remoção de pontos e da coleção
     Dado que o Qdrant está disponível
     Quando eu crio a coleção "documentos" com vetores de tamanho 3 e distância "Cosine"

@@ -70,6 +70,42 @@ Então('a contagem de pontos da coleção {string} deve ser {int}') do |collecti
   expect(@client.count_points(collection)).to eq(count)
 end
 
+Quando('eu crio a coleção {string} com hnsw m={int} ef={int} e quantização {string}') do |name, m, ef, type|
+  @client.create_collection(
+    name,
+    vector_size: 384,
+    hnsw: { m: m, ef_construct: ef },
+    quantization: { scalar: { type: type, always_ram: true } }
+  )
+end
+
+Então('a coleção {string} deve ter índice hnsw com m {int} e ef_construct {int}') do |name, m, ef|
+  request = @transport.requests.find { |r| r[:path] == "/collections/#{name}" }
+  expect(request[:body][:hnsw_config]).to eq(m: m, ef_construct: ef)
+end
+
+Então('a coleção {string} deve usar quantização escalar {string}') do |name, type|
+  request = @transport.requests.find { |r| r[:path] == "/collections/#{name}" }
+  expect(request[:body][:quantization_config][:scalar][:type]).to eq(type)
+end
+
+Quando('eu busco na coleção {string} o vetor {string} com hnsw_ef {int}') do |collection, vector, hnsw_ef|
+  @client.search(collection, vector: vector.split(',').map(&:to_f), params: { hnsw_ef: hnsw_ef })
+end
+
+Então('a busca deve ter usado hnsw_ef {int}') do |hnsw_ef|
+  expect(@transport.requests.last[:body][:params]).to eq(hnsw_ef: hnsw_ef)
+end
+
+Quando('eu ajusto a coleção {string} para ef_construct {int}') do |collection, ef|
+  @client.update_collection(collection, hnsw: { ef_construct: ef })
+end
+
+Então('o ajuste deve ter sido enviado como PATCH para a coleção {string}') do |collection|
+  expect(@transport.requests.last)
+    .to eq(method: :patch, path: "/collections/#{collection}", body: { hnsw_config: { ef_construct: 256 } })
+end
+
 Quando('eu removo os pontos {string} da coleção {string}') do |ids, collection|
   @client.delete_points(collection, ids.split(',').map(&:to_i))
 end

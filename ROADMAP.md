@@ -7,8 +7,8 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 **Foco:** preparar o esqueleto do projeto seguindo TDD (unidade) e BDD (comportamento/aceitação), antes de incorporar o restante da trilha.
 
 - **Setup:** rbenv/rvm (`.ruby-version`), Bundler (`Gemfile`), estrutura `app/`, `lib/`, `spec/`, `features/`.
-- **TDD — RSpec:** ciclo Red → Green → Refactor. Unidades: `DocumentIngestor` (ingestão/normalização), `DocumentChunker` (chunking com overlap) e `QdrantClient` (criação de coleções, indexação e busca de pontos, com transporte injetável para testes sem servidor real).
-- **BDD — Cucumber/Gherkin (pt):** cenários de aceitação em `features/document_ingestion.feature`, `features/document_chunking.feature` e `features/qdrant_client.feature`, com os respectivos step definitions.
+- **TDD — RSpec:** ciclo Red → Green → Refactor. Unidades: `DocumentIngestor` (ingestão/normalização), `ContentCleaner` (limpeza por formato), `DocumentChunker` (chunking com overlap), `EmbeddingGenerator` (vetorização), `QdrantClient` (coleções, pontos e busca, com transporte injetável para testes sem servidor real) e `EtlPipeline` (orquestração).
+- **BDD — Cucumber/Gherkin (pt):** cenários de aceitação em `features/document_ingestion.feature`, `features/document_chunking.feature`, `features/qdrant_client.feature` e `features/etl_pipeline.feature`, com os respectivos step definitions.
 - **Qualidade/CI:** Rubocop (`.rubocop.yml`) e pipeline no GitHub Actions (`.github/workflows/ci.yml`) rodando `rubocop`, `rspec` e `cucumber` a cada push/PR.
 
 > Issue: [#6](https://github.com/Hirley/AIAD/issues/6)
@@ -22,15 +22,16 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
   - Indexação, distância vetorial (Cosine, Euclidean, Dot Product) e filtros de metadados.
   - Operações de CRUD de coleções e otimização de busca vetorial no Qdrant.
 
-> Issue: [#1](https://github.com/Hirley/AIAD/issues/1)
+> Issue: [#1](https://github.com/Hirley/AIAD/issues/1) — **concluída**
 >
-> Progresso: `QdrantClient` (`lib/qdrant_client.rb`) concluído via TDD/BDD, cobrindo o CRUD completo sobre um transporte injetável (testado sem depender de um servidor Qdrant real):
+> Entregue via TDD/BDD, tudo testável sem servidor Qdrant nem chamada a modelo externo:
 >
-> - **Coleções:** `create_collection` (com `distance` configurável), `collection_exists?`, `delete_collection`.
-> - **Pontos:** `upsert_points`, `delete_points`, `count_points`.
-> - **Busca:** `search` por similaridade, com `limit` e filtro de metadados opcional (`filter:`).
->
-> Pendente na fase: geração real de embeddings e otimização da busca vetorial (parâmetros HNSW, quantização).
+> - **ETL (`lib/etl_pipeline.rb`, `lib/content_cleaner.rb`):** ingestão → limpeza por formato (texto, log, PDF) → chunking com overlap → embeddings → indexação. Payload guarda origem, formato, índice do chunk e texto; os ids são determinísticos, então reprocessar a mesma origem atualiza os pontos em vez de duplicá-los.
+> - **Embeddings (`lib/embedding_generator.rb`):** vetorização por *hashing trick* (determinística, sem rede), vetores normalizados, similaridade de cosseno e provider injetável para modelos reais.
+> - **Qdrant — coleções (`lib/qdrant_client.rb`):** `create_collection` (com `distance` configurável), `collection_exists?`, `delete_collection`, `update_collection`.
+> - **Qdrant — pontos:** `upsert_points`, `delete_points`, `count_points`.
+> - **Qdrant — busca:** `search` por similaridade, com `limit` e filtro de metadados opcional.
+> - **Otimização:** `hnsw` (`m`, `ef_construct`) e `quantization` na criação, tuning por `update_collection` e ajuste de precisão por consulta via `params: { hnsw_ef:, exact:, quantization: }`.
 
 ## Fase 2: Arquiteturas de RAG & Otimização de Tokens
 **Foco:** Recuperação contextual eficiente e redução de custos.
