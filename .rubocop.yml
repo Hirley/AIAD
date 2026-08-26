@@ -16,6 +16,13 @@ Naming/AsciiIdentifiers:
   Exclude:
     - "features/step_definitions/**/*"
 
+# As classes recebem os colaboradores por argumento nomeado (injecao de
+# dependencia), entao a contagem de argumentos nomeados nao mede complexidade
+# aqui: EtlPipeline recebe qdrant, embedder, chunker, ingestor, cleaner e
+# lexical_index, cada um substituivel em teste.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
 Lint/EmptyFile:
   Exclude:
     - "features/support/env.rb"

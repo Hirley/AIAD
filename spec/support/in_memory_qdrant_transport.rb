@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative '../../lib/embedding_generator'
+require_relative '../../lib/metadata_filter'
 
 # Qdrant em memória: guarda os pontos indexados e responde à busca rankeando de
 # verdade por similaridade de cosseno, com suporte a filtro de metadados.
@@ -84,12 +85,6 @@ class InMemoryQdrantTransport
     points = @collections.fetch(name, {}).values
     return points unless filter
 
-    points.select { |point| matches?(point[:payload] || {}, filter) }
-  end
-
-  def matches?(payload, filter)
-    Array(filter[:must]).all? do |condition|
-      payload[condition[:key].to_sym].to_s == condition.dig(:match, :value).to_s
-    end
+    points.select { |point| MetadataFilter.matches?(point[:payload], filter) }
   end
 end

@@ -45,6 +45,13 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
   - Seleção dinâmica de modelos (Model Routing) com base em complexidade.
 
 > Issue: [#2](https://github.com/Hirley/AIAD/issues/2)
+>
+> Progresso:
+>
+> - **RAG básico** (`lib/rag_pipeline.rb`, `lib/prompt_builder.rb`): recuperação dos top-k trechos, prompt com contexto numerado e origem de cada trecho, geração com modelo injetável. Sem contexto recuperado, responde que não sabe sem chamar o modelo.
+> - **Hybrid Search** (`lib/hybrid_retriever.rb`, `lib/bm25_index.rb`): braço vetorial + braço léxico BM25 fundidos por Reciprocal Rank Fusion, com o filtro de metadados valendo para os dois braços. A mesma ingestão alimenta os dois índices.
+>
+> Pendente na fase: re-ranking, Parent Document Retriever, HyDE, contagem de tokens, prompt compression, cache semântico e model routing.
 
 ## Fase 3: Agentes de IA & Fluxos Autônomos
 **Foco:** Criação de sistemas que executam ações de forma autônoma.

@@ -16,6 +16,11 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `EmbeddingGenerator` | Vetorização de texto (embeddings) e similaridade de cosseno |
 | `QdrantClient` | CRUD de coleções e pontos no Qdrant, busca por similaridade com filtro de metadados e tuning de índice |
 | `EtlPipeline` | Orquestra ingestão → limpeza → chunking → embeddings → indexação, e a busca semântica |
+| `Bm25Index` | Índice léxico BM25 em memória (braço de palavra-chave da busca híbrida) |
+| `HybridRetriever` | Funde o braço vetorial e o léxico por Reciprocal Rank Fusion |
+| `MetadataFilter` | Avalia filtro de metadados no formato do Qdrant sobre um payload local |
+| `PromptBuilder` | Monta o prompt do RAG com contexto numerado e origem de cada trecho |
+| `RagPipeline` | Recuperação → prompt → geração, devolvendo resposta, trechos e origens |
 
 ### Injeção de dependência
 
@@ -40,6 +45,35 @@ pipeline.search('quantos dias de férias por ano', collection: 'documentos', lim
 ```
 
 Reprocessar a mesma origem gera os mesmos ids de ponto, então a reingestão atualiza os pontos em vez de duplicá-los.
+
+### RAG
+
+```ruby
+rag = RagPipeline.new(retriever: pipeline, llm: meu_modelo, collection: 'documentos', top_k: 4)
+
+resultado = rag.answer('quantos dias de férias por ano')
+resultado[:answer]    # resposta gerada
+resultado[:sources]   # origens que fundamentaram a resposta
+resultado[:passages]  # trechos recuperados, com score
+```
+
+O modelo só precisa responder a `complete(prompt)`. Quando a recuperação não traz nada, o `RagPipeline`
+responde que não sabe **sem chamar o modelo**, evitando gastar tokens numa pergunta sem contexto.
+
+### Busca híbrida (vetorial + BM25)
+
+```ruby
+lexical = Bm25Index.new
+pipeline = EtlPipeline.new(qdrant: qdrant, lexical_index: lexical)   # uma ingestão alimenta os dois índices
+
+hibrido = HybridRetriever.new(vector_retriever: pipeline, lexical_index: lexical)
+RagPipeline.new(retriever: hibrido, llm: meu_modelo, collection: 'documentos')
+```
+
+O `HybridRetriever` expõe a mesma interface de busca do `EtlPipeline`, então entra no lugar dele sem
+nenhuma outra mudança. A fusão é por Reciprocal Rank Fusion (`1/(k + posição)`), que dispensa normalizar
+escalas incomparáveis — similaridade de cosseno e score BM25 — e premia o que os dois braços concordam
+em trazer para o topo. Cada resultado informa em `matched_by` qual braço o encontrou.
 
 ### Otimização da busca vetorial
 

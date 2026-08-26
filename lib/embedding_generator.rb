@@ -2,6 +2,8 @@
 
 require 'digest'
 
+require_relative 'tokenizer'
+
 # Gera embeddings (vetorização de texto) para os chunks de documentos.
 #
 # Por padrão usa o "hashing trick": cada termo é projetado de forma determinística
@@ -14,7 +16,6 @@ class EmbeddingGenerator
   class BlankTextError < StandardError; end
 
   DEFAULT_DIMENSIONS = 256
-  TOKEN_PATTERN = /[[:alnum:]]+/
 
   attr_reader :dimensions
 
@@ -29,7 +30,7 @@ class EmbeddingGenerator
     raise BlankTextError, 'text cannot be blank' if text.nil? || text.strip.empty?
     return @provider.call(text) if @provider
 
-    normalize(project(tokenize(text)))
+    normalize(project(Tokenizer.tokens(text)))
   end
 
   def embed_all(texts)
@@ -52,10 +53,6 @@ class EmbeddingGenerator
   private_class_method :dot_product
 
   private
-
-  def tokenize(text)
-    text.downcase.scan(TOKEN_PATTERN)
-  end
 
   def project(tokens)
     tokens.each_with_object(Array.new(@dimensions, 0.0)) do |token, vector|

@@ -2,6 +2,7 @@
 
 require 'digest'
 
+require_relative 'bm25_index'
 require_relative 'content_cleaner'
 require_relative 'document_chunker'
 require_relative 'document_ingestor'
@@ -19,12 +20,13 @@ class EtlPipeline
   ID_BITS = 48
 
   def initialize(qdrant:, embedder: EmbeddingGenerator.new, chunker: nil, ingestor: DocumentIngestor.new,
-                 cleaner: ContentCleaner.new)
+                 cleaner: ContentCleaner.new, lexical_index: nil)
     @qdrant = qdrant
     @embedder = embedder
     @chunker = chunker || DocumentChunker.new(chunk_size: DEFAULT_CHUNK_SIZE, overlap: DEFAULT_OVERLAP)
     @ingestor = ingestor
     @cleaner = cleaner
+    @lexical_index = lexical_index
   end
 
   def run(content, collection:, source:, format: :texto, metadata: {})
@@ -33,6 +35,7 @@ class EtlPipeline
 
     ensure_collection(collection)
     @qdrant.upsert_points(collection, points)
+    index_lexically(points)
 
     { collection: collection, source: source, format: format, chunks: points.size,
       point_ids: points.map { |point| point[:id] } }
@@ -56,6 +59,14 @@ class EtlPipeline
         payload: metadata.merge(source: source, format: format, chunk_index: index, text: chunk)
       }
     end
+  end
+
+  # A mesma ingestão alimenta os dois braços da busca híbrida: o vetorial, no
+  # Qdrant, e o léxico BM25, em memória.
+  def index_lexically(points)
+    return if @lexical_index.nil?
+
+    points.each { |point| @lexical_index.add(point[:id], point[:payload][:text], payload: point[:payload]) }
   end
 
   # Id determinístico: reprocessar a mesma origem atualiza os pontos existentes

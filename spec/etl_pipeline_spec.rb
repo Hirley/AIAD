@@ -96,6 +96,42 @@ RSpec.describe EtlPipeline do
     end
   end
 
+  describe 'indexação léxica para busca híbrida' do
+    let(:lexical_index) { Bm25Index.new }
+
+    subject(:pipeline) do
+      described_class.new(
+        qdrant: qdrant,
+        embedder: embedder,
+        chunker: DocumentChunker.new(chunk_size: 20, overlap: 5),
+        lexical_index: lexical_index
+      )
+    end
+
+    it 'indexes each chunk in the lexical index too' do
+      pipeline.run('a' * 45, collection: 'documentos', source: 'relatorio.txt')
+
+      expect(lexical_index.size).to eq(3)
+    end
+
+    it 'makes the chunk findable by its terms' do
+      pipeline.run('erro ERR-4021', collection: 'documentos', source: 'incidente.txt')
+
+      expect(lexical_index.search('ERR-4021').first[:payload][:source]).to eq('incidente.txt')
+    end
+
+    it 'uses the same point ids in both indexes' do
+      result = pipeline.run('erro ERR-4021', collection: 'documentos', source: 'incidente.txt')
+
+      expect(lexical_index.search('ERR-4021').first[:id]).to eq(result[:point_ids].first)
+    end
+
+    it 'works without a lexical index' do
+      expect { described_class.new(qdrant: qdrant, embedder: embedder).run('texto', collection: 'c', source: 's') }
+        .not_to raise_error
+    end
+  end
+
   describe '#search' do
     it 'embeds the query and returns the matches from Qdrant' do
       transport.stub_response(
