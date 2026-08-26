@@ -1,0 +1,21 @@
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.1
+
+Style/Documentation:
+  Enabled: false
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "features/**/*"
+
+# Passos do Cucumber usam nomes em portugues (Dado/Quando/Entao) de proposito,
+# para casar com o Gherkin em pt escrito nas features.
+Naming/AsciiIdentifiers:
+  Exclude:
+    - "features/step_definitions/**/*"
+
+Lint/EmptyFile:
+  Exclude:
+    - "features/support/env.rb"

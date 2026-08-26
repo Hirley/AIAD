@@ -3,6 +3,16 @@
 Trilha em quatro fases incrementais, do nível fundamental à produção e observabilidade avançada.
 Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 
+## Setup do Projeto (TDD/BDD) — App base em Ruby
+**Foco:** preparar o esqueleto do projeto seguindo TDD (unidade) e BDD (comportamento/aceitação), antes de incorporar o restante da trilha.
+
+- **Setup:** rbenv/rvm (`.ruby-version`), Bundler (`Gemfile`), estrutura `app/`, `lib/`, `spec/`, `features/`.
+- **TDD — RSpec:** ciclo Red → Green → Refactor. Primeira unidade: `DocumentIngestor` (`lib/document_ingestor.rb`, `spec/document_ingestor_spec.rb`).
+- **BDD — Cucumber/Gherkin (pt):** cenário de aceitação em `features/document_ingestion.feature`, step definitions em `features/step_definitions/document_ingestion_steps.rb`.
+- **Qualidade/CI:** Rubocop (`.rubocop.yml`) e pipeline no GitHub Actions (`.github/workflows/ci.yml`) rodando `rubocop`, `rspec` e `cucumber` a cada push/PR.
+
+> Issue: [#6](https://github.com/Hirley/AIAD/issues/6)
+
 ## Fase 1: Fundamentos de Engenharia de Dados & Bancos Vetoriais
 **Foco:** Construção e preparação do pipeline de entrada (ETL) e armazenamento para IA.
 
