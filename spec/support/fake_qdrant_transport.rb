@@ -16,6 +16,14 @@ class FakeQdrantTransport
     request(:post, path, body)
   end
 
+  def get(path)
+    request(:get, path, nil)
+  end
+
+  def delete(path)
+    request(:delete, path, nil)
+  end
+
   def stub_response(path, response)
     @responses[path] = response
   end

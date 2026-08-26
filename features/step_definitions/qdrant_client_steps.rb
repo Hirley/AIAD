@@ -56,3 +56,34 @@ end
 Então('a busca deve ter usado o filtro de metadado {string} com valor {string}') do |field, value|
   expect(@transport.requests.last[:body][:filter]).to eq(must: [{ key: field, match: { value: value } }])
 end
+
+Dado('o Qdrant informa que a coleção {string} existe com {int} pontos') do |collection, count|
+  @transport.stub_response("/collections/#{collection}/exists", { ok: true, result: { exists: true } })
+  @transport.stub_response("/collections/#{collection}/points/count", { ok: true, result: { count: count } })
+end
+
+Então('a coleção {string} deve existir') do |collection|
+  expect(@client.collection_exists?(collection)).to be(true)
+end
+
+Então('a contagem de pontos da coleção {string} deve ser {int}') do |collection, count|
+  expect(@client.count_points(collection)).to eq(count)
+end
+
+Quando('eu removo os pontos {string} da coleção {string}') do |ids, collection|
+  @client.delete_points(collection, ids.split(',').map(&:to_i))
+end
+
+Quando('eu removo a coleção {string}') do |collection|
+  @client.delete_collection(collection)
+end
+
+Então('os pontos {string} devem ter sido removidos da coleção {string}') do |ids, collection|
+  request = @transport.requests.find { |r| r[:path] == "/collections/#{collection}/points/delete" }
+  expect(request[:body][:points]).to eq(ids.split(',').map(&:to_i))
+end
+
+Então('a coleção {string} deve ter sido removida') do |collection|
+  request = @transport.requests.find { |r| r[:method] == :delete && r[:path] == "/collections/#{collection}" }
+  expect(request).not_to be_nil
+end

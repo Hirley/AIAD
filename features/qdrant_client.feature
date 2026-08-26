@@ -1,8 +1,8 @@
 # language: pt
 Funcionalidade: Cliente do Qdrant
   Como desenvolvedor do assistente de análise de documentos
-  Eu quero um cliente que crie coleções e indexe pontos no Qdrant
-  Para que os chunks de documentos possam ser armazenados e buscados por similaridade
+  Eu quero um cliente que gerencie coleções e pontos no Qdrant
+  Para que os chunks de documentos possam ser armazenados, buscados por similaridade e removidos
 
   Cenário: Criação de uma coleção e indexação de pontos
     Dado que o Qdrant está disponível
@@ -29,3 +29,18 @@ Funcionalidade: Cliente do Qdrant
     Quando eu busco na coleção "documentos" os 1 pontos mais próximos do vetor "0.1,0.2,0.3" com filtro "autor"="joao"
     Então devo receber 1 resultados da busca
     E a busca deve ter usado o filtro de metadado "autor" com valor "joao"
+
+  Cenário: Consulta de existência e contagem de pontos da coleção
+    Dado que o Qdrant está disponível
+    E o Qdrant informa que a coleção "documentos" existe com 42 pontos
+    Então a coleção "documentos" deve existir
+    E a contagem de pontos da coleção "documentos" deve ser 42
+
+  Cenário: Remoção de pontos e da coleção
+    Dado que o Qdrant está disponível
+    Quando eu crio a coleção "documentos" com vetores de tamanho 3 e distância "Cosine"
+    E eu indexo os pontos dos chunks "abc" e "def" na coleção "documentos"
+    E eu removo os pontos "1,2" da coleção "documentos"
+    E eu removo a coleção "documentos"
+    Então os pontos "1,2" devem ter sido removidos da coleção "documentos"
+    E a coleção "documentos" deve ter sido removida

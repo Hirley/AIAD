@@ -24,7 +24,13 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 
 > Issue: [#1](https://github.com/Hirley/AIAD/issues/1)
 >
-> Progresso: `QdrantClient` (`lib/qdrant_client.rb`) implementado via TDD/BDD — cria coleções (`create_collection`), indexa pontos (`upsert_points`) e busca por similaridade com filtro de metadados opcional (`search`, parâmetro `filter:`) sobre um transporte injetável, testado sem depender de um servidor Qdrant real.
+> Progresso: `QdrantClient` (`lib/qdrant_client.rb`) concluído via TDD/BDD, cobrindo o CRUD completo sobre um transporte injetável (testado sem depender de um servidor Qdrant real):
+>
+> - **Coleções:** `create_collection` (com `distance` configurável), `collection_exists?`, `delete_collection`.
+> - **Pontos:** `upsert_points`, `delete_points`, `count_points`.
+> - **Busca:** `search` por similaridade, com `limit` e filtro de metadados opcional (`filter:`).
+>
+> Pendente na fase: geração real de embeddings e otimização da busca vetorial (parâmetros HNSW, quantização).
 
 ## Fase 2: Arquiteturas de RAG & Otimização de Tokens
 **Foco:** Recuperação contextual eficiente e redução de custos.
