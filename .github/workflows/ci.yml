@@ -21,3 +21,47 @@ jobs:
         run: bundle exec rspec
       - name: Cucumber
         run: bundle exec cucumber
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sobe a stack (API + Qdrant)
+        env:
+          AIAD_API_KEYS: leitor:chave-de-ci-leitura:read;ingestor:chave-de-ci-total:read,write
+        run: docker compose up --build --detach --wait --wait-timeout 180
+
+      - name: Health check responde sem credencial
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/health)" = "200"
+
+      - name: Rota protegida recusa quem não tem chave
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/search)" = "401"
+
+      - name: Chave de leitura não pode ingerir
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/documents \
+            -H 'Authorization: Bearer chave-de-ci-leitura' -H 'Content-Type: application/json' \
+            -d '{"content":"texto","source":"a.txt"}')
+          test "$status" = "403"
+
+      - name: Ingestão e pergunta ponta a ponta contra o Qdrant real
+        run: |
+          curl -sf -X POST http://127.0.0.1:9292/documents \
+            -H 'Authorization: Bearer chave-de-ci-total' -H 'Content-Type: application/json' \
+            -d '{"content":"A política de férias garante trinta dias por ano.","source":"politica.txt"}'
+          resposta=$(curl -sf -X POST http://127.0.0.1:9292/ask \
+            -H 'Authorization: Bearer chave-de-ci-leitura' -H 'Content-Type: application/json' \
+            -d '{"question":"quantos dias de férias por ano"}')
+          echo "$resposta"
+          echo "$resposta" | grep -q 'politica.txt'
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: docker compose logs
+
+      - name: Derruba a stack
+        if: always()
+        run: docker compose down --volumes

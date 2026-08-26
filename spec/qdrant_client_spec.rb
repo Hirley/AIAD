@@ -107,6 +107,10 @@ RSpec.describe QdrantClient do
 
       expect(transport.requests.last[:body]).not_to have_key(:filter)
     end
+
+    it 'returns an empty list when the response carries no result' do
+      expect(client.search('documentos', vector: [0.1])).to eq([])
+    end
   end
 
   describe '#collection_exists?' do

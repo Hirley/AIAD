@@ -1,0 +1,14 @@
+.git/
+.github/
+.bundle/
+vendor/bundle/
+spec/
+features/
+tmp/
+log/
+coverage/
+.env
+*.gem
+.rspec_status
+README.md
+ROADMAP.md

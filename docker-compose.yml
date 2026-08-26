@@ -1,0 +1,27 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    # Sem portas publicadas: o Qdrant fica acessível só na rede interna do
+    # compose. Quem fala com o mundo é a API, que exige chave.
+    expose:
+      - "6333"
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - qdrant
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      AIAD_API_KEYS: ${AIAD_API_KEYS:?defina AIAD_API_KEYS no .env antes de subir}
+      AIAD_COLLECTION: ${AIAD_COLLECTION:-documentos}
+      AIAD_TOP_K: ${AIAD_TOP_K:-4}
+    ports:
+      - "127.0.0.1:9292:9292"
+
+volumes:
+  qdrant_storage:

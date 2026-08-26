@@ -21,6 +21,12 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `MetadataFilter` | Avalia filtro de metadados no formato do Qdrant sobre um payload local |
 | `PromptBuilder` | Monta o prompt do RAG com contexto numerado e origem de cada trecho |
 | `RagPipeline` | Recuperação → prompt → geração, devolvendo resposta, trechos e origens |
+| `HttpQdrantTransport` | Transporte HTTP real para o Qdrant, montado a partir do ambiente |
+| `ExtractiveLlm` | Resposta extrativa, usada enquanto nenhum modelo real está configurado |
+| `ApiKeyStore` | Chaves de API e escopos, guardadas como digest e comparadas em tempo constante |
+| `Api::AccessPolicy` | Escopo exigido por rota; rota não mapeada exige o escopo mais restritivo |
+| `Api::Authentication` | Middleware Rack de autenticação e autorização |
+| `Api::App` | API HTTP: `/health`, `/documents`, `/search`, `/ask` |
 
 ### Injeção de dependência
 
@@ -91,6 +97,73 @@ qdrant.search('documentos', vector: vetor, params: { hnsw_ef: 128 })      # prec
 ```bash
 bundle install
 ```
+
+## API HTTP
+
+Suba tudo com Docker:
+
+```bash
+cp .env.example .env   # edite e troque as chaves antes de subir
+docker compose up --build
+```
+
+A API sobe em `http://127.0.0.1:9292` e o Qdrant fica só na rede interna do compose — quem fala com o
+mundo é a API, que exige chave.
+
+| Rota | Escopo | O que faz |
+| --- | --- | --- |
+| `GET /health` | público | Verificação de saúde, não toca no Qdrant |
+| `POST /documents` | `write` | Ingere um documento (`content`, `source`, `format`, `metadata`) |
+| `POST /search` | `read` | Busca trechos (`query`, `limit`, `filter`) |
+| `POST /ask` | `read` | Pergunta com RAG (`question`, `filter`) |
+
+```bash
+curl -X POST http://127.0.0.1:9292/documents \
+  -H 'Authorization: Bearer SUA-CHAVE' -H 'Content-Type: application/json' \
+  -d '{"content":"A política de férias garante trinta dias por ano.","source":"politica.txt"}'
+
+curl -X POST http://127.0.0.1:9292/ask \
+  -H 'Authorization: Bearer SUA-CHAVE' -H 'Content-Type: application/json' \
+  -d '{"question":"quantos dias de férias por ano"}'
+```
+
+### Controle de acesso
+
+Autenticação por chave de API no header `Authorization: Bearer <chave>`, com autorização por escopo:
+`read` consulta, `write` ingere. As chaves são configuradas em `AIAD_API_KEYS`, no formato
+`nome:chave:escopos`, separadas por `;`.
+
+```bash
+ruby -rsecurerandom -e 'puts SecureRandom.hex(32)'   # gere cada chave assim
+```
+
+Decisões que valem registrar:
+
+- **A chave nunca é guardada em claro na memória do processo:** o `ApiKeyStore` guarda só o digest SHA-256
+  e compara em tempo constante, para que uma chave errada não vaze pelo tempo da comparação. O `inspect`
+  também é sobrescrito, para a chave não aparecer em log de exceção.
+- **Rota nova nasce protegida:** a `AccessPolicy` exige o escopo mais restritivo para qualquer rota não
+  mapeada, então esquecer de declarar uma rota falha fechando, não abrindo.
+- **Erro não vaza detalhe interno:** chave recusada não volta ecoada no corpo, e falha do Qdrant vira
+  `503` genérico em vez de `500` com o caminho interno que foi chamado.
+- **O container não roda como root** e a imagem final não leva compilador nem as gems de teste.
+
+O que **não** está implementado e um deploy real precisaria: rate limiting por chave, rotação/revogação de
+chaves sem restart, TLS (hoje o TLS terminaria num proxy na frente) e auditoria de acesso.
+
+### Modelo de linguagem
+
+Sem modelo configurado, a API responde de forma **extrativa**: o `ExtractiveLlm` recorta o trecho mais
+relevante do contexto e o devolve citado, sem gerar texto novo. É um substituto honesto para rodar a stack
+inteira sem credencial de provedor — para respostas geradas, injete um modelo real no `RagPipeline`
+(a interface é só `complete(prompt)`).
+
+### Um limite importante do deploy atual
+
+O índice léxico BM25 vive na memória do processo. Por isso o `config/puma.rb` fixa **um worker**: com mais
+de um, cada worker teria seu próprio índice e o braço léxico da busca híbrida passaria a depender de qual
+worker atendeu a requisição. Para escalar horizontalmente, o `Bm25Index` precisa virar índice compartilhado
+(ou dar lugar aos vetores esparsos do próprio Qdrant).
 
 ## Testes
 

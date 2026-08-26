@@ -26,3 +26,9 @@ Metrics/ParameterLists:
 Lint/EmptyFile:
   Exclude:
     - "features/support/env.rb"
+
+# Rack::Test chama `app` como metodo no World do Cucumber; nao da para trocar
+# por attr_reader num arquivo de step definitions.
+Style/TrivialAccessors:
+  Exclude:
+    - "features/step_definitions/**/*"

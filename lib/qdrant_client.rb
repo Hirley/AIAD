@@ -46,7 +46,7 @@ class QdrantClient
   def search(collection, vector:, limit: 10, filter: nil, params: nil)
     body = merge_present({ vector: vector, limit: limit }, filter: filter, params: presence(params))
     response = post("#{collection_path(collection)}/points/search", body)
-    response[:result]
+    response[:result] || []
   end
 
   def count_points(collection, filter: nil)
