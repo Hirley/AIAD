@@ -29,3 +29,20 @@ Então('{int} pontos devem ter sido enviados para a coleção {string}') do |cou
   points_request = @transport.requests.find { |r| r[:path] == "/collections/#{collection}/points" }
   expect(points_request[:body][:points].size).to eq(count)
 end
+
+Dado('a coleção {string} possui pontos que respondem a uma busca com os resultados:') do |collection, table|
+  results = table.hashes.map { |row| { id: row['id'].to_i, score: row['score'].to_f } }
+  @transport.stub_response("/collections/#{collection}/points/search", { ok: true, result: results })
+end
+
+Quando('eu busco na coleção {string} os {int} pontos mais próximos do vetor {string}') do |collection, limit, vector|
+  @search_result = @client.search(collection, vector: vector.split(',').map(&:to_f), limit: limit)
+end
+
+Então('devo receber {int} resultados da busca') do |count|
+  expect(@search_result.size).to eq(count)
+end
+
+Então('o resultado mais relevante deve ser o ponto de id {string}') do |id|
+  expect(@search_result.first[:id]).to eq(id.to_i)
+end

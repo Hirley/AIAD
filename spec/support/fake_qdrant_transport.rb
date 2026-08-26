@@ -9,7 +9,21 @@ class FakeQdrantTransport
   end
 
   def put(path, body)
-    @requests << { path: path, body: body }
+    request(:put, path, body)
+  end
+
+  def post(path, body)
+    request(:post, path, body)
+  end
+
+  def stub_response(path, response)
+    @responses[path] = response
+  end
+
+  private
+
+  def request(method, path, body)
+    @requests << { method: method, path: path, body: body }
     @responses.fetch(path, { ok: true })
   end
 end

@@ -15,10 +15,23 @@ class QdrantClient
     put("/collections/#{collection}/points", points: points)
   end
 
+  def search(collection, vector:, limit: 10)
+    response = post("/collections/#{collection}/points/search", vector: vector, limit: limit)
+    response[:result]
+  end
+
   private
 
   def put(path, body)
-    response = @transport.put(path, body)
+    perform(:put, path, body)
+  end
+
+  def post(path, body)
+    perform(:post, path, body)
+  end
+
+  def perform(method, path, body)
+    response = @transport.public_send(method, path, body)
     raise RequestError, "Qdrant request to #{path} failed" unless response[:ok]
 
     response
