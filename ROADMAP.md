@@ -7,8 +7,8 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 **Foco:** preparar o esqueleto do projeto seguindo TDD (unidade) e BDD (comportamento/aceitação), antes de incorporar o restante da trilha.
 
 - **Setup:** rbenv/rvm (`.ruby-version`), Bundler (`Gemfile`), estrutura `app/`, `lib/`, `spec/`, `features/`.
-- **TDD — RSpec:** ciclo Red → Green → Refactor. Primeira unidade: `DocumentIngestor` (`lib/document_ingestor.rb`, `spec/document_ingestor_spec.rb`).
-- **BDD — Cucumber/Gherkin (pt):** cenário de aceitação em `features/document_ingestion.feature`, step definitions em `features/step_definitions/document_ingestion_steps.rb`.
+- **TDD — RSpec:** ciclo Red → Green → Refactor. Unidades: `DocumentIngestor` (ingestão/normalização) e `DocumentChunker` (chunking com overlap).
+- **BDD — Cucumber/Gherkin (pt):** cenários de aceitação em `features/document_ingestion.feature` e `features/document_chunking.feature`, com os respectivos step definitions.
 - **Qualidade/CI:** Rubocop (`.rubocop.yml`) e pipeline no GitHub Actions (`.github/workflows/ci.yml`) rodando `rubocop`, `rspec` e `cucumber` a cada push/PR.
 
 > Issue: [#6](https://github.com/Hirley/AIAD/issues/6)
