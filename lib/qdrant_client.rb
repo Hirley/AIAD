@@ -15,8 +15,11 @@ class QdrantClient
     put("/collections/#{collection}/points", points: points)
   end
 
-  def search(collection, vector:, limit: 10)
-    response = post("/collections/#{collection}/points/search", vector: vector, limit: limit)
+  def search(collection, vector:, limit: 10, filter: nil)
+    body = { vector: vector, limit: limit }
+    body[:filter] = filter if filter
+
+    response = post("/collections/#{collection}/points/search", body)
     response[:result]
   end
 

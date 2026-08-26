@@ -46,3 +46,13 @@ end
 Então('o resultado mais relevante deve ser o ponto de id {string}') do |id|
   expect(@search_result.first[:id]).to eq(id.to_i)
 end
+
+Quando('eu busco na coleção {string} os {int} pontos mais próximos do vetor {string} com filtro {string}={string}') \
+  do |collection, limit, vector, field, value|
+  filter = { must: [{ key: field, match: { value: value } }] }
+  @search_result = @client.search(collection, vector: vector.split(',').map(&:to_f), limit: limit, filter: filter)
+end
+
+Então('a busca deve ter usado o filtro de metadado {string} com valor {string}') do |field, value|
+  expect(@transport.requests.last[:body][:filter]).to eq(must: [{ key: field, match: { value: value } }])
+end

@@ -20,3 +20,12 @@ Funcionalidade: Cliente do Qdrant
     Quando eu busco na coleção "documentos" os 2 pontos mais próximos do vetor "0.1,0.2,0.3"
     Então devo receber 2 resultados da busca
     E o resultado mais relevante deve ser o ponto de id "1"
+
+  Cenário: Busca por similaridade filtrando por metadado
+    Dado que o Qdrant está disponível
+    E a coleção "documentos" possui pontos que respondem a uma busca com os resultados:
+      | id | score |
+      | 3  | 0.88  |
+    Quando eu busco na coleção "documentos" os 1 pontos mais próximos do vetor "0.1,0.2,0.3" com filtro "autor"="joao"
+    Então devo receber 1 resultados da busca
+    E a busca deve ter usado o filtro de metadado "autor" com valor "joao"

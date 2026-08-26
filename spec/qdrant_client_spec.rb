@@ -93,5 +93,19 @@ RSpec.describe QdrantClient do
         failing_client.search('documentos', vector: [0.1])
       end.to raise_error(QdrantClient::RequestError)
     end
+
+    it 'includes a metadata filter in the request when given' do
+      filter = { must: [{ key: 'autor', match: { value: 'joao' } }] }
+
+      client.search('documentos', vector: [0.1], filter: filter)
+
+      expect(transport.requests.last[:body][:filter]).to eq(filter)
+    end
+
+    it 'omits the filter key when none is given' do
+      client.search('documentos', vector: [0.1])
+
+      expect(transport.requests.last[:body]).not_to have_key(:filter)
+    end
   end
 end
