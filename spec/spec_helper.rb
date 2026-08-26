@@ -14,7 +14,7 @@
 # the additional setup, and require it from the spec files that actually need
 # it.
 #
-require_relative 'support/fake_qdrant_transport'
+Dir[File.join(__dir__, 'support', '*.rb')].each { |support_file| require support_file }
 
 # See https://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 RSpec.configure do |config|
