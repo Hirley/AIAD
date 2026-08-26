@@ -7,8 +7,8 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 **Foco:** preparar o esqueleto do projeto seguindo TDD (unidade) e BDD (comportamento/aceitação), antes de incorporar o restante da trilha.
 
 - **Setup:** rbenv/rvm (`.ruby-version`), Bundler (`Gemfile`), estrutura `app/`, `lib/`, `spec/`, `features/`.
-- **TDD — RSpec:** ciclo Red → Green → Refactor. Unidades: `DocumentIngestor` (ingestão/normalização) e `DocumentChunker` (chunking com overlap).
-- **BDD — Cucumber/Gherkin (pt):** cenários de aceitação em `features/document_ingestion.feature` e `features/document_chunking.feature`, com os respectivos step definitions.
+- **TDD — RSpec:** ciclo Red → Green → Refactor. Unidades: `DocumentIngestor` (ingestão/normalização), `DocumentChunker` (chunking com overlap) e `QdrantClient` (criação de coleções e indexação de pontos, com transporte injetável para testes sem servidor real).
+- **BDD — Cucumber/Gherkin (pt):** cenários de aceitação em `features/document_ingestion.feature`, `features/document_chunking.feature` e `features/qdrant_client.feature`, com os respectivos step definitions.
 - **Qualidade/CI:** Rubocop (`.rubocop.yml`) e pipeline no GitHub Actions (`.github/workflows/ci.yml`) rodando `rubocop`, `rspec` e `cucumber` a cada push/PR.
 
 > Issue: [#6](https://github.com/Hirley/AIAD/issues/6)
@@ -23,6 +23,8 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
   - Operações de CRUD de coleções e otimização de busca vetorial no Qdrant.
 
 > Issue: [#1](https://github.com/Hirley/AIAD/issues/1)
+>
+> Progresso: `QdrantClient` (`lib/qdrant_client.rb`) implementado via TDD/BDD — cria coleções (`create_collection`) e indexa pontos (`upsert_points`) sobre um transporte injetável, testado sem depender de um servidor Qdrant real.
 
 ## Fase 2: Arquiteturas de RAG & Otimização de Tokens
 **Foco:** Recuperação contextual eficiente e redução de custos.
