@@ -24,12 +24,14 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    # No nível do job: o compose interpola o arquivo em todo comando, inclusive
+    # no down, então a variável precisa existir até no teardown.
+    env:
+      AIAD_API_KEYS: leitor:chave-de-ci-leitura:read;ingestor:chave-de-ci-total:read,write
     steps:
       - uses: actions/checkout@v4
 
       - name: Sobe a stack (API + Qdrant)
-        env:
-          AIAD_API_KEYS: leitor:chave-de-ci-leitura:read;ingestor:chave-de-ci-total:read,write
         run: docker compose up --build --detach --wait --wait-timeout 180
 
       - name: Health check responde sem credencial
