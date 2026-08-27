@@ -83,4 +83,82 @@ RSpec.describe RagPipeline do
       expect(result[:sources]).not_to include('vazio.txt')
     end
   end
+
+  describe 'com re-ranking' do
+    let(:pool_hits) do
+      [
+        { id: 1, score: 0.91, payload: { text: 'texto sem relação nenhuma', source: 'a.txt' } },
+        { id: 2, score: 0.90, payload: { text: 'trinta dias de férias por ano', source: 'b.txt' } }
+      ]
+    end
+    let(:retriever) { FakeRetriever.new(results: pool_hits) }
+
+    subject(:rag) do
+      described_class.new(retriever: retriever, llm: llm, collection: 'documentos',
+                          top_k: 1, reranker: Reranker.new)
+    end
+
+    it 'retrieves a bigger pool than top_k, to give the reranker what to choose from' do
+      rag.answer('dias de férias')
+
+      expect(retriever.calls.last[:limit]).to be > 1
+    end
+
+    it 'keeps only top_k passages after reranking' do
+      expect(rag.answer('dias de férias')[:passages].size).to eq(1)
+    end
+
+    it 'promotes the passage that actually answers the question' do
+      expect(rag.answer('dias de férias')[:sources]).to eq(['b.txt'])
+    end
+
+    it 'without a reranker, keeps the retrieval order' do
+      plain = described_class.new(retriever: retriever, llm: llm, collection: 'documentos', top_k: 1)
+
+      expect(plain.answer('dias de férias')[:sources]).to eq(['a.txt'])
+    end
+  end
+
+  describe 'contagem de tokens' do
+    it 'reports the tokens spent on the prompt and on the answer' do
+      usage = rag.answer('Quantos dias de férias?')[:usage]
+
+      expect(usage[:prompt_tokens]).to be > 0
+      expect(usage[:completion_tokens]).to be > 0
+      expect(usage[:total_tokens]).to eq(usage[:prompt_tokens] + usage[:completion_tokens])
+    end
+
+    it 'reports zero when the model is not called' do
+      empty = described_class.new(retriever: FakeRetriever.new(results: []), llm: llm, collection: 'documentos')
+
+      expect(empty.answer('sem contexto')[:usage][:total_tokens]).to eq(0)
+    end
+  end
+
+  describe 'compressão do contexto' do
+    subject(:rag) do
+      described_class.new(retriever: retriever, llm: llm, collection: 'documentos',
+                          compressor: PromptCompressor.new, context_budget: 8)
+    end
+
+    it 'fits the context into the budget' do
+      counter = TokenCounter.new
+      passages = rag.answer('Quantos dias de férias?')[:passages]
+
+      expect(passages.sum { |passage| counter.estimate(passage[:text]) }).to be <= 8
+    end
+
+    it 'sends the compressed context to the model' do
+      rag.answer('Quantos dias de férias?')
+
+      expect(llm.prompts.last).not_to include('Divisíveis em três períodos.')
+    end
+
+    it 'without a compressor, sends every retrieved passage' do
+      plain = described_class.new(retriever: retriever, llm: llm, collection: 'documentos')
+      plain.answer('Quantos dias de férias?')
+
+      expect(llm.prompts.last).to include('Divisíveis em três períodos.')
+    end
+  end
 end

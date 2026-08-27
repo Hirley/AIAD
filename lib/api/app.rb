@@ -78,7 +78,8 @@ module Api
       # O prompt fica fora da resposta: é detalhe interno e pode carregar
       # trecho de documento que o cliente não pediu.
       json(200, answer: result[:answer], sources: result[:sources],
-                passages: result[:passages].map { |passage| present_passage(passage) })
+                passages: result[:passages].map { |passage| present_passage(passage) },
+                cached: result[:cached], usage: result[:usage])
     end
 
     def present_hit(hit)

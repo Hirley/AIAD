@@ -27,6 +27,16 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::AccessPolicy` | Escopo exigido por rota; rota não mapeada exige o escopo mais restritivo |
 | `Api::Authentication` | Middleware Rack de autenticação e autorização |
 | `Api::App` | API HTTP: `/health`, `/documents`, `/search`, `/ask` |
+| `Reranker` | Reordena os candidatos recuperados, com scorer injetável |
+| `ParentDocumentRetriever` | Busca no chunk, entrega o documento inteiro |
+| `ParentStore` | Guarda o documento inteiro de cada origem |
+| `HydeRetriever` | Busca com uma resposta hipotética gerada pelo modelo |
+| `TokenCounter` | Estimativa de tokens, com tokenizador injetável |
+| `UsageMeter` | Acumula tokens e custo por modelo |
+| `PromptCompressor` | Encaixa o contexto num orçamento de tokens |
+| `SemanticCache` | Cache por similaridade de embedding |
+| `CachedRag` | Decorador de cache na frente do RAG, um por filtro |
+| `ModelRouter` | Roteia a pergunta entre modelo barato e modelo forte |
 
 ### Injeção de dependência
 
@@ -80,6 +90,57 @@ O `HybridRetriever` expõe a mesma interface de busca do `EtlPipeline`, então e
 nenhuma outra mudança. A fusão é por Reciprocal Rank Fusion (`1/(k + posição)`), que dispensa normalizar
 escalas incomparáveis — similaridade de cosseno e score BM25 — e premia o que os dois braços concordam
 em trazer para o topo. Cada resultado informa em `matched_by` qual braço o encontrou.
+
+### RAG avançado
+
+| Recurso | Classe | Padrão na API |
+| --- | --- | --- |
+| Re-ranking | `Reranker` | ligado (`AIAD_RERANK`) |
+| Busca híbrida | `HybridRetriever` | sempre |
+| Parent Document Retriever | `ParentDocumentRetriever` | desligado (`AIAD_PARENT_DOCUMENTS`) |
+| HyDE | `HydeRetriever` | desligado (`AIAD_HYDE`) |
+
+Os três recuperadores têm a mesma interface de busca, então se empilham: híbrido por dentro, documento pai
+por fora, HyDE por fora de tudo.
+
+- **Re-ranking** reordena os candidatos olhando o texto inteiro. Com reranker o pipeline busca um pool
+  maior que o `top_k` — reordenar só o que já cabia no contexto não mudaria nada. O scorer padrão mede
+  cobertura léxica; para um cross-encoder de verdade, injete `Reranker.new(scorer: ...)`.
+- **Parent Document Retriever** busca no chunk pequeno, que dá precisão, e entrega o documento inteiro,
+  que dá contexto. Chunks do mesmo documento viram um resultado só, com o melhor score.
+- **HyDE** pede ao modelo uma resposta hipotética e busca com ela, fechando o vão de vocabulário entre
+  pergunta e documento. A pergunta original continua na consulta para não perder termo exato. Custa uma
+  chamada a mais ao modelo por pergunta — por isso vem desligado.
+
+### Controle de custos
+
+| Recurso | Classe | Padrão na API |
+| --- | --- | --- |
+| Contagem de tokens | `TokenCounter`, `UsageMeter` | sempre |
+| Compressão de contexto | `PromptCompressor` | `AIAD_CONTEXT_BUDGET` (1500) |
+| Cache semântico | `SemanticCache`, `CachedRag` | ligado (`AIAD_CACHE`) |
+| Roteamento de modelos | `ModelRouter` | disponível, não usado sem modelo real |
+
+Toda resposta de `/ask` traz `usage` (tokens de prompt e de geração) e `cached`.
+
+```json
+{"answer": "...", "sources": ["politica.txt"], "cached": false,
+ "usage": {"prompt_tokens": 96, "completion_tokens": 12, "total_tokens": 108}}
+```
+
+- **Contagem** é estimativa (`~4 caracteres por token`, com mínimo de um token por palavra). Para o número
+  exato do provedor, injete o tokenizador dele em `TokenCounter.new(counter: ...)`. O `UsageMeter` acumula
+  tokens e custo por modelo, a preço por milhão de tokens.
+- **Compressão** normaliza espaço, descarta trecho repetido e, se ainda não couber, corta os menos
+  relevantes — truncando o último em vez de devolver contexto vazio. O corte é medido palavra a palavra:
+  cortar por número de caracteres não garantiria o orçamento.
+- **Cache semântico** compara a pergunta por embedding, então pega reformulação, não só texto idêntico.
+  Há **um cache por filtro de metadados**: a resposta restrita a um recorte não pode ser servida a quem
+  perguntou sem o mesmo recorte. Resposta sem contexto não é cacheada — se o documento for indexado
+  depois, a próxima pergunta precisa tentar de novo.
+- **Roteamento** manda pergunta simples para o modelo barato e analítica para o forte, expondo
+  `complete(prompt)` como qualquer modelo. Na dúvida escolhe o forte: errar para o lado caro custa
+  dinheiro, para o lado barato custa uma resposta ruim.
 
 ### Otimização da busca vetorial
 

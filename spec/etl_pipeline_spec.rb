@@ -154,4 +154,32 @@ RSpec.describe EtlPipeline do
       expect(transport.requests.last[:body][:filter]).to eq(filter)
     end
   end
+
+  describe 'armazenamento do documento pai' do
+    let(:parent_store) { ParentStore.new }
+
+    subject(:pipeline) do
+      described_class.new(qdrant: qdrant, embedder: embedder, parent_store: parent_store,
+                          chunker: DocumentChunker.new(chunk_size: 20, overlap: 5))
+    end
+
+    it 'stores the whole cleaned document, not the chunks' do
+      pipeline.run('2026-08-26T10:00:00Z INFO  Linha de log', collection: 'documentos',
+                                                              source: 'app.log', format: :log)
+
+      expect(parent_store.fetch('app.log')).to eq('Linha de log')
+    end
+
+    it 'stamps the parent id on every chunk' do
+      pipeline.run('a' * 45, collection: 'documentos', source: 'relatorio.txt')
+      points = transport.requests.find { |request| request[:path] == '/collections/documentos/points' }[:body][:points]
+
+      expect(points.map { |point| point[:payload][:parent_id] }).to all(eq('relatorio.txt'))
+    end
+
+    it 'works without a parent store' do
+      expect { described_class.new(qdrant: qdrant, embedder: embedder).run('texto', collection: 'c', source: 's') }
+        .not_to raise_error
+    end
+  end
 end

@@ -44,14 +44,19 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
   - Técnicas de Prompt Compression e uso de Caching (ex: Semantic Cache).
   - Seleção dinâmica de modelos (Model Routing) com base em complexidade.
 
-> Issue: [#2](https://github.com/Hirley/AIAD/issues/2)
->
-> Progresso:
+> Issue: [#2](https://github.com/Hirley/AIAD/issues/2) — **concluída**
 >
 > - **RAG básico** (`lib/rag_pipeline.rb`, `lib/prompt_builder.rb`): recuperação dos top-k trechos, prompt com contexto numerado e origem de cada trecho, geração com modelo injetável. Sem contexto recuperado, responde que não sabe sem chamar o modelo.
 > - **Hybrid Search** (`lib/hybrid_retriever.rb`, `lib/bm25_index.rb`): braço vetorial + braço léxico BM25 fundidos por Reciprocal Rank Fusion, com o filtro de metadados valendo para os dois braços. A mesma ingestão alimenta os dois índices.
+> - **Re-ranking** (`lib/reranker.rb`): reordena o pool recuperado olhando o texto inteiro; scorer injetável para cross-encoder.
+> - **Parent Document Retriever** (`lib/parent_document_retriever.rb`): busca no chunk pequeno e entrega o documento inteiro, colapsando chunks do mesmo documento.
+> - **HyDE** (`lib/hyde_retriever.rb`): gera uma resposta hipotética e busca com ela, mantendo a pergunta original na consulta.
+> - **Tokens** (`lib/token_counter.rb`, `lib/usage_meter.rb`): estimativa por resposta e acumulado de tokens e custo por modelo.
+> - **Prompt compression** (`lib/prompt_compressor.rb`): normaliza, deduplica e corta o contexto até caber no orçamento.
+> - **Cache semântico** (`lib/semantic_cache.rb`, `lib/cached_rag.rb`): reaproveita resposta de pergunta reformulada, com um cache por filtro de metadados.
+> - **Model routing** (`lib/model_router.rb`): pergunta simples para o modelo barato, analítica para o forte.
 >
-> Pendente na fase: re-ranking, Parent Document Retriever, HyDE, contagem de tokens, prompt compression, cache semântico e model routing.
+> Fora da trilha, para tornar tudo isso utilizável: **API HTTP com controle de acesso** (chave por escopo, `lib/api/`) e **deploy em Docker** (API + Qdrant no compose), com o CI subindo a stack e testando o fluxo real.
 
 ## Fase 3: Agentes de IA & Fluxos Autônomos
 **Foco:** Criação de sistemas que executam ações de forma autônoma.

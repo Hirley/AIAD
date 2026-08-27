@@ -1,12 +1,18 @@
 # frozen_string_literal: true
 
 require_relative '../api_key_store'
+require_relative '../cached_rag'
 require_relative '../bm25_index'
 require_relative '../embedding_generator'
 require_relative '../etl_pipeline'
 require_relative '../extractive_llm'
 require_relative '../http_qdrant_transport'
 require_relative '../hybrid_retriever'
+require_relative '../hyde_retriever'
+require_relative '../parent_document_retriever'
+require_relative '../prompt_compressor'
+require_relative '../reranker'
+require_relative '../semantic_cache'
 require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
 require_relative 'app'
@@ -15,6 +21,8 @@ require_relative 'authentication'
 module Api
   DEFAULT_COLLECTION = 'documentos'
   DEFAULT_TOP_K = 4
+  DEFAULT_CONTEXT_BUDGET = 1500
+  TRUE_VALUES = %w[1 true yes on].freeze
 
   # Monta a stack completa a partir do ambiente: transporte HTTP para o Qdrant,
   # ETL, busca híbrida, RAG e o middleware de controle de acesso por fora.
@@ -25,22 +33,67 @@ module Api
   # esparsos do próprio Qdrant) para valer em produção.
   def self.build(env: ENV)
     collection = collection_for(env)
+    options = retrieval_options(env)
     lexical_index = Bm25Index.new
-    etl = etl_pipeline(env, lexical_index)
+    parent_store = ParentStore.new
+    etl = etl_pipeline(env, lexical_index, parent_store)
+    llm = llm_for(env)
 
-    rag = RagPipeline.new(
-      retriever: HybridRetriever.new(vector_retriever: etl, lexical_index: lexical_index),
-      llm: llm_for(env), collection: collection, top_k: top_k_for(env)
-    )
+    retriever = retriever_for(etl, lexical_index, parent_store, llm, options)
+    rag = rag_pipeline(retriever, llm, collection, options)
 
     Authentication.new(App.new(etl: etl, rag: rag, collection: collection), store: ApiKeyStore.from_env(env))
   end
 
-  def self.etl_pipeline(env, lexical_index)
+  # Ligados por padrão: re-ranking e cache semântico, que melhoram a resposta
+  # sem chamada extra ao modelo. Desligados por padrão: HyDE, que gasta uma
+  # chamada a mais por pergunta, e documento pai, que muda bastante o tamanho
+  # do contexto.
+  def self.retrieval_options(env = ENV)
+    {
+      rerank: flag(env, 'AIAD_RERANK', default: true),
+      cache: flag(env, 'AIAD_CACHE', default: true),
+      hyde: flag(env, 'AIAD_HYDE', default: false),
+      parent_documents: flag(env, 'AIAD_PARENT_DOCUMENTS', default: false),
+      context_budget: Integer(env.fetch('AIAD_CONTEXT_BUDGET', DEFAULT_CONTEXT_BUDGET))
+    }
+  end
+
+  def self.flag(env, name, default:)
+    value = env[name]
+    return default if value.nil? || value.to_s.strip.empty?
+
+    TRUE_VALUES.include?(value.to_s.strip.downcase)
+  end
+  private_class_method :flag
+
+  # A busca híbrida é a base; documento pai e HyDE, quando ligados, envolvem o
+  # recuperador por fora, cada um mantendo a mesma interface de busca.
+  def self.retriever_for(etl, lexical_index, parent_store, llm, options)
+    retriever = HybridRetriever.new(vector_retriever: etl, lexical_index: lexical_index)
+    retriever = ParentDocumentRetriever.new(retriever: retriever, store: parent_store) if options[:parent_documents]
+
+    options[:hyde] ? HydeRetriever.new(retriever: retriever, llm: llm) : retriever
+  end
+  private_class_method :retriever_for
+
+  def self.rag_pipeline(retriever, llm, collection, options)
+    rag = RagPipeline.new(
+      retriever: retriever, llm: llm, collection: collection, top_k: DEFAULT_TOP_K,
+      reranker: (Reranker.new if options[:rerank]),
+      compressor: PromptCompressor.new, context_budget: options[:context_budget]
+    )
+
+    options[:cache] ? CachedRag.new(rag: rag) : rag
+  end
+  private_class_method :rag_pipeline
+
+  def self.etl_pipeline(env, lexical_index, parent_store)
     EtlPipeline.new(
       qdrant: QdrantClient.new(transport: HttpQdrantTransport.from_env(env)),
       embedder: EmbeddingGenerator.new,
-      lexical_index: lexical_index
+      lexical_index: lexical_index,
+      parent_store: parent_store
     )
   end
   private_class_method :etl_pipeline
@@ -50,11 +103,6 @@ module Api
 
     value.empty? ? DEFAULT_COLLECTION : value
   end
-
-  def self.top_k_for(env)
-    Integer(env.fetch('AIAD_TOP_K', DEFAULT_TOP_K))
-  end
-  private_class_method :top_k_for
 
   # Sem modelo configurado a API responde de forma extrativa, recortando o
   # trecho recuperado em vez de gerar texto.

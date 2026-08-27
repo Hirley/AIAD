@@ -7,6 +7,7 @@ require_relative 'content_cleaner'
 require_relative 'document_chunker'
 require_relative 'document_ingestor'
 require_relative 'embedding_generator'
+require_relative 'parent_store'
 require_relative 'qdrant_client'
 
 # Pipeline de ETL: ingere conteúdo não estruturado (texto, log ou PDF extraído),
@@ -20,17 +21,20 @@ class EtlPipeline
   ID_BITS = 48
 
   def initialize(qdrant:, embedder: EmbeddingGenerator.new, chunker: nil, ingestor: DocumentIngestor.new,
-                 cleaner: ContentCleaner.new, lexical_index: nil)
+                 cleaner: ContentCleaner.new, lexical_index: nil, parent_store: nil)
     @qdrant = qdrant
     @embedder = embedder
     @chunker = chunker || DocumentChunker.new(chunk_size: DEFAULT_CHUNK_SIZE, overlap: DEFAULT_OVERLAP)
     @ingestor = ingestor
     @cleaner = cleaner
     @lexical_index = lexical_index
+    @parent_store = parent_store
   end
 
   def run(content, collection:, source:, format: :texto, metadata: {})
-    chunks = extract(content, format: format)
+    document = clean(content, format: format)
+    chunks = @chunker.chunk(document)
+    store_parent(source, document)
     points = build_points(chunks, source: source, format: format, metadata: metadata)
 
     ensure_collection(collection)
@@ -47,8 +51,14 @@ class EtlPipeline
 
   private
 
-  def extract(content, format:)
-    @chunker.chunk(@cleaner.clean(@ingestor.ingest(content), format: format))
+  def clean(content, format:)
+    @cleaner.clean(@ingestor.ingest(content), format: format)
+  end
+
+  # O chunk pequeno dá precisão na busca; o documento inteiro, guardado aqui,
+  # dá contexto na hora de responder (Parent Document Retriever).
+  def store_parent(source, document)
+    @parent_store&.put(source, document)
   end
 
   def build_points(chunks, source:, format:, metadata:)
@@ -56,7 +66,8 @@ class EtlPipeline
       {
         id: point_id(source, index),
         vector: @embedder.embed(chunk),
-        payload: metadata.merge(source: source, format: format, chunk_index: index, text: chunk)
+        payload: metadata.merge(source: source, parent_id: source, format: format,
+                                chunk_index: index, text: chunk)
       }
     end
   end

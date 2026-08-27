@@ -198,4 +198,20 @@ RSpec.describe Api::App do
       expect(json_body['error']).to include('indisponível')
     end
   end
+
+  describe 'custo na resposta de POST /ask' do
+    before { ingest_sample }
+
+    it 'reports the tokens spent' do
+      post_json('/ask', question: 'quantos dias de férias por ano')
+
+      expect(json_body['usage']).to include('prompt_tokens', 'completion_tokens', 'total_tokens')
+    end
+
+    it 'says whether the answer came from the cache' do
+      post_json('/ask', question: 'quantos dias de férias por ano')
+
+      expect(json_body['cached']).to be(false)
+    end
+  end
 end

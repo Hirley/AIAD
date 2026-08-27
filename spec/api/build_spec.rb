@@ -46,4 +46,33 @@ RSpec.describe 'Api.build' do
   it 'falls back to the default collection' do
     expect(Api.collection_for(environment)).to eq(Api::DEFAULT_COLLECTION)
   end
+
+  describe '.retrieval_options' do
+    it 'turns reranking and semantic cache on by default' do
+      expect(Api.retrieval_options({})).to include(rerank: true, cache: true)
+    end
+
+    it 'leaves HyDE and parent documents off by default, since both cost more' do
+      expect(Api.retrieval_options({})).to include(hyde: false, parent_documents: false)
+    end
+
+    it 'reads the flags from the environment' do
+      options = Api.retrieval_options('AIAD_HYDE' => '1', 'AIAD_RERANK' => 'false')
+
+      expect(options).to include(hyde: true, rerank: false)
+    end
+
+    it 'accepts the usual ways of writing a flag' do
+      expect(Api.retrieval_options('AIAD_HYDE' => 'true')[:hyde]).to be(true)
+      expect(Api.retrieval_options('AIAD_HYDE' => 'sim')[:hyde]).to be(false)
+    end
+
+    it 'reads the context budget' do
+      expect(Api.retrieval_options('AIAD_CONTEXT_BUDGET' => '900')[:context_budget]).to eq(900)
+    end
+
+    it 'has a default context budget' do
+      expect(Api.retrieval_options({})[:context_budget]).to eq(Api::DEFAULT_CONTEXT_BUDGET)
+    end
+  end
 end

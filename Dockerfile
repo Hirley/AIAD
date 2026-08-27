@@ -31,7 +31,7 @@ ENV BUNDLE_DEPLOYMENT=1 \
     QDRANT_URL=http://qdrant:6333
 
 COPY --from=build /usr/local/bundle /usr/local/bundle
-COPY --chown=aiad:aiad config.ru ./
+COPY --chown=aiad:aiad Gemfile Gemfile.lock config.ru ./
 COPY --chown=aiad:aiad config ./config
 COPY --chown=aiad:aiad lib ./lib
 
