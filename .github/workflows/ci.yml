@@ -31,6 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Este job roda **sem** as variáveis da stack de observabilidade, de
+      # propósito: é assim que se garante que quem só quer a API não precisa
+      # configurar Grafana para subir. O compose interpola o arquivo inteiro
+      # antes de filtrar por profile, então uma variável obrigatória num
+      # serviço do profile derruba até quem nunca vai usá-lo — e foi
+      # exatamente o que aconteceu aqui uma vez.
+      - name: O arquivo do compose interpola sem a configuração do profile
+        run: |
+          docker compose config --quiet
+          docker compose --profile observabilidade config --quiet
+
       - name: Sobe a stack (API + Qdrant)
         run: docker compose up --build --detach --wait --wait-timeout 180
 
