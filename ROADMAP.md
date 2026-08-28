@@ -67,7 +67,16 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
   - Construção de grafos de estado e agentes multi-agente utilizando LangGraph ou CrewAI.
   - Persistência de estado de conversa e gerenciamento de memória em agentes.
 
-> Issue: [#3](https://github.com/Hirley/AIAD/issues/3)
+> Issue: [#3](https://github.com/Hirley/AIAD/issues/3) — **concluída**
+>
+> Entregue via TDD/BDD, tudo testável sem chamada a modelo externo:
+>
+> - **ReAct (`lib/react_agent.rb`, `lib/react_parser.rb`):** laço pensamento → ação → observação, com teto de iterações, erro de ferramenta virando observação e o trajeto registrado para auditoria. O parser é separado do agente: ele corta a "Observação:" que o modelo escreve sozinho e dá precedência à ação quando o modelo responde junto com ela.
+> - **Tool Use (`lib/tool.rb`, `lib/tool_registry.rb`, `lib/retrieval_tool.rb`):** ferramenta com descrição obrigatória (é o que o modelo lê para escolher) e validação estrita dos argumentos nos dois sentidos. No registro, ferramenta inexistente, argumento errado e falha interna viram texto de observação em vez de derrubar o laço.
+> - **Plan-and-Solve (`lib/plan_and_solve_agent.rb`, `lib/plan_parser.rb`):** o plano inteiro antes da primeira ação, execução passo a passo alimentando o seguinte e síntese no fim. Teto de passos, plano ilegível caindo para um passo só (a própria pergunta) e passo que não concluiu chegando marcado à síntese, para o modelo dizer o que faltou em vez de preencher a lacuna.
+> - **Grafo de estado (`lib/state_graph.rb`):** nós que devolvem só o que mudou (fundido no estado, nunca substituído), arestas fixas e condicionais, teto de passos para ciclo que não fecha e conferência de montagem antes da primeira execução — nó sem saída e grafo sem entrada falham na hora, não no dia em que o ramo torto for percorrido. É o que LangGraph faz em Python, no tamanho que este projeto precisa.
+> - **Multi-agente (`lib/agent_crew.rb`, `lib/specialist_tool.rb`):** time montado sobre o grafo, com rotear → executar → revisar e a revisão podendo devolver o trabalho com o motivo. O ciclo é o que justifica o grafo: numa lista de passos, "refaça com o que o revisor apontou" não tem como ser expresso. Especialista é ferramenta, então catálogo, validação e conversão de falha em texto vêm prontos do `ToolRegistry`.
+> - **Memória e persistência (`lib/conversation_memory.rb`, `lib/conversation_store.rb`, `lib/file_conversation_store.rb`, `lib/conversational_agent.rb`):** turnos por conversa, orçamento de tokens que derruba o mais antigo primeiro e nunca a última fala, e store injetável — em memória por padrão, em disco quando o histórico precisa sobreviver ao processo. Os dois stores passam pelo mesmo contrato de teste. O `ConversationalAgent` é decorador: ReAct, Plan-and-Solve e o time ganham memória sem saber que ela existe.
 
 ## Fase 4: Observabilidade de Aplicações e LLMs
 **Foco:** Garantia de confiabilidade, rastreabilidade e métricas de infraestrutura.
