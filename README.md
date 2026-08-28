@@ -37,6 +37,13 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `SemanticCache` | Cache por similaridade de embedding |
 | `CachedRag` | Decorador de cache na frente do RAG, um por filtro |
 | `ModelRouter` | Roteia a pergunta entre modelo barato e modelo forte |
+| `Tool` | Ferramenta do agente: nome, descrição, parâmetros e validação estrita dos argumentos |
+| `ToolRegistry` | Catálogo de ferramentas do prompt e despacho da chamada, com erro virando observação |
+| `RetrievalTool` | Liga o agente ao acervo: recebe um termo, devolve trechos com a origem |
+| `ReactParser` | Leitura da saída do modelo no formato ReAct |
+| `ReactAgent` | Laço ReAct: pensamento → ação → observação, com teto de iterações e trajeto registrado |
+| `PlanParser` | Leitura do plano numerado que o modelo escreveu |
+| `PlanAndSolveAgent` | Planeja antes de agir, executa passo a passo alimentando o seguinte e sintetiza a resposta |
 
 ### Injeção de dependência
 
