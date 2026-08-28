@@ -23,5 +23,20 @@ services:
     ports:
       - "127.0.0.1:9292:9292"
 
+  # Roda a suíte (Rubocop, RSpec e Cucumber) dentro do container, porque não há
+  # Ruby na máquina de desenvolvimento. Fica atrás de um profile para não subir
+  # junto com a API. O código entra por bind mount e as gems ficam num volume,
+  # então editar e rodar de novo não reinstala nada nem exige rebuild.
+  test:
+    profiles:
+      - test
+    build:
+      context: .
+      target: test
+    volumes:
+      - .:/app
+      - test_bundle:/usr/local/bundle
+
 volumes:
   qdrant_storage:
+  test_bundle:
