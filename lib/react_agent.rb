@@ -3,6 +3,7 @@
 require 'json'
 require_relative 'react_parser'
 require_relative 'tool_registry'
+require_relative 'tracer'
 
 # Agente ReAct: alterna raciocínio e ação até chegar na resposta.
 #
@@ -51,27 +52,60 @@ class ReactAgent
     %<scratchpad>s
   PROMPT
 
-  def initialize(llm:, tools:, max_iterations: DEFAULT_MAX_ITERATIONS, parser: ReactParser.new)
+  def initialize(llm:, tools:, max_iterations: DEFAULT_MAX_ITERATIONS, parser: ReactParser.new,
+                 tracer: Tracer.null)
     @llm = llm
     @tools = tools
     @max_iterations = max_iterations
     @parser = parser
+    @tracer = tracer
   end
 
+  # A saída do trace é a resposta, não o hash interno: o trajeto e a contagem
+  # de voltas já estão nos spans e nos metadados, e repetir tudo na saída só
+  # entulharia o visualizador.
   def run(question)
+    @tracer.trace('react.run', input: question) do |span|
+      outcome = run_within(span, question)
+      span.output = outcome[:answer]
+      span.annotate(iterations: outcome[:iterations], finished: outcome[:finished])
+
+      outcome
+    end
+  end
+
+  private
+
+  # O laço fica fora dos spans de propósito: sair de dentro de um span com
+  # `return` fecharia ele sem saída registrada. Cada volta abre e fecha os seus.
+  def run_within(span, question)
     steps = []
 
     (1..@max_iterations).each do |turn|
-      step = @parser.parse(@llm.complete(prompt_for(question, steps)))
+      step = think(span, question, steps, turn)
       return result(question, step[:answer], steps, turn) if step[:type] == :answer
 
-      steps << execute(step)
+      steps << act(span, step, turn)
     end
 
     result(question, NO_CONCLUSION, steps, @max_iterations, finished: false)
   end
 
-  private
+  def think(span, question, steps, turn)
+    prompt = prompt_for(question, steps)
+    raw = span.span('react.llm', input: prompt, metadata: { turn: turn }) { @llm.complete(prompt) }
+
+    @parser.parse(raw)
+  end
+
+  def act(span, step, turn)
+    span.span('react.tool', input: step[:input], metadata: { turn: turn, tool: step[:tool] }) do |tool_span|
+      executed = execute(step)
+      tool_span.output = executed[:observation]
+
+      executed
+    end
+  end
 
   def result(question, answer, steps, iterations, finished: true)
     { question: question, answer: answer, steps: steps, iterations: iterations, finished: finished }

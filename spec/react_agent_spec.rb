@@ -151,4 +151,75 @@ RSpec.describe ReactAgent do
       expect(agent_for('Resposta Final: ok').run('?')[:finished]).to be(true)
     end
   end
+
+  # Instrumentação nasce desligada: o tracer padrão é o nulo.
+  describe 'tracing' do
+    let(:exporter) { CollectingExporter.new }
+    let(:tracer) { Tracer.new(exporter: exporter) }
+
+    def traced_agent(*responses)
+      described_class.new(llm: ScriptedLlm.new(*responses), tools: tools, tracer: tracer)
+    end
+
+    def span_names
+      exporter.last[:spans].map { |span| span[:name] }
+    end
+
+    it 'exports one trace per run' do
+      traced_agent('Resposta Final: ok').run('?')
+
+      expect(exporter.traces.size).to eq(1)
+    end
+
+    it 'records the question as the input and the answer as the output' do
+      traced_agent('Resposta Final: são 30 dias.').run('Quantos dias?')
+
+      expect(exporter.last[:input]).to eq('Quantos dias?')
+      expect(exporter.last[:output]).to eq('são 30 dias.')
+    end
+
+    # A pergunta que a instrumentação existe para responder: o tempo foi no
+    # modelo ou na ferramenta?
+    it 'separates the model call from the tool call' do
+      traced_agent("Ação: buscar\nEntrada: férias", 'Resposta Final: são 30 dias.').run('?')
+
+      expect(span_names).to eq(%w[react.llm react.tool react.llm])
+    end
+
+    it 'opens no tool span when the model answered straight away' do
+      traced_agent('Resposta Final: ok').run('?')
+
+      expect(span_names).to eq(['react.llm'])
+    end
+
+    it 'keeps the observation as the output of the tool span' do
+      traced_agent("Ação: buscar\nEntrada: férias", 'Resposta Final: ok').run('?')
+
+      expect(exporter.last[:spans][1][:output]).to eq('A política concede 30 dias de férias.')
+    end
+
+    # Sem o número do turno, dois spans iguais no meio de um laço não dizem em
+    # qual volta o agente estava.
+    it 'numbers the turn each span belongs to' do
+      traced_agent("Ação: buscar\nEntrada: férias", 'Resposta Final: ok').run('?')
+
+      expect(exporter.last[:spans].map { |span| span[:metadata][:turn] }).to eq([1, 1, 2])
+    end
+
+    it 'names the tool on the tool span' do
+      traced_agent("Ação: buscar\nEntrada: férias", 'Resposta Final: ok').run('?')
+
+      expect(exporter.last[:spans][1][:metadata]).to include(tool: 'buscar')
+    end
+
+    it 'annotates how the run ended' do
+      traced_agent('Resposta Final: ok').run('?')
+
+      expect(exporter.last[:metadata]).to include(iterations: 1, finished: true)
+    end
+
+    it 'does not change the answer' do
+      expect(traced_agent('Resposta Final: ok').run('?')[:answer]).to eq('ok')
+    end
+  end
 end

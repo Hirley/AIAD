@@ -3,6 +3,7 @@
 require_relative 'specialist_tool'
 require_relative 'state_graph'
 require_relative 'tool_registry'
+require_relative 'tracer'
 
 # Time de agentes especialistas com roteamento e revisão, montado sobre o
 # `StateGraph`: rotear → executar → revisar, com a revisão podendo devolver o
@@ -63,10 +64,11 @@ class AgentCrew
     Resposta: %<answer>s
   PROMPT
 
-  def initialize(llm:, specialists:, max_attempts: DEFAULT_MAX_ATTEMPTS)
+  def initialize(llm:, specialists:, max_attempts: DEFAULT_MAX_ATTEMPTS, tracer: Tracer.null)
     @llm = llm
     @specialists = specialists
     @max_attempts = max_attempts
+    @tracer = tracer
     @graph = build_graph
   end
 
@@ -86,7 +88,7 @@ class AgentCrew
   # Um passo para rotear e dois por tentativa (executar e revisar). O teto do
   # grafo é só a rede de segurança; quem encerra é o teto de tentativas.
   def build_graph
-    StateGraph.new(max_steps: 1 + (2 * @max_attempts))
+    StateGraph.new(max_steps: 1 + (2 * @max_attempts), name: 'crew.run', tracer: @tracer)
               .node(:rotear) { |state| route(state) }
               .node(:executar) { |state| execute(state) }
               .node(:revisar) { |state| review(state) }

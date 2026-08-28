@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'plan_parser'
+require_relative 'tracer'
 
 # Agente Plan-and-Solve: primeiro escreve o plano inteiro, depois executa passo
 # a passo e por fim junta tudo numa resposta.
@@ -65,40 +66,59 @@ class PlanAndSolveAgent
     Resposta:
   PROMPT
 
-  def initialize(llm:, executor:, max_steps: DEFAULT_MAX_STEPS, parser: PlanParser.new)
+  def initialize(llm:, executor:, max_steps: DEFAULT_MAX_STEPS, parser: PlanParser.new, tracer: Tracer.null)
     @llm = llm
     @executor = executor
     @max_steps = max_steps
     @parser = parser
+    @tracer = tracer
   end
 
   def run(question)
-    plan = plan_for(question)
-    steps = solve(question, plan)
-
-    { question: question, plan: plan, steps: steps, answer: answer_for(question, steps),
-      finished: steps.all? { |step| step[:finished] } }
+    @tracer.trace('plan_and_solve.run', input: question) { |span| run_within(span, question) }
   end
 
   private
 
-  def plan_for(question)
-    plan = @parser.parse(@llm.complete(format(PLANNING, question: question, limit: @max_steps)))
-    plan = [question] if plan.empty?
+  def run_within(span, question)
+    plan = plan_for(span, question)
+    steps = solve(span, question, plan)
+    answer = answer_for(span, question, steps)
+    span.output = answer
 
-    plan.first(@max_steps)
+    { question: question, plan: plan, steps: steps, answer: answer,
+      finished: steps.all? { |step| step[:finished] } }
   end
 
-  def solve(question, plan)
-    plan.each_with_object([]) do |task, steps|
-      result = @executor.run(format(TASK, question: question, task: task, found: found_so_far(steps)))
+  def plan_for(span, question)
+    span.span('plan_and_solve.plan', input: question) do |planning|
+      plan = @parser.parse(@llm.complete(format(PLANNING, question: question, limit: @max_steps)))
+      plan = [question] if plan.empty?
 
-      steps << { task: task, answer: result[:answer], finished: result[:finished], trace: result[:steps] }
+      planning.output = plan.first(@max_steps)
     end
   end
 
-  def answer_for(question, steps)
-    @llm.complete(format(SYNTHESIS, question: question, found: transcript(steps)))
+  def solve(span, question, plan)
+    plan.each_with_object([]).with_index(1) do |(task, steps), number|
+      steps << solve_step(span, question, task, steps, number)
+    end
+  end
+
+  def solve_step(span, question, task, steps, number)
+    span.span('plan_and_solve.step', input: task, metadata: { step: number }) do |step_span|
+      result = @executor.run(format(TASK, question: question, task: task, found: found_so_far(steps)))
+      step_span.output = result[:answer]
+      step_span.annotate(step: number, finished: result[:finished])
+
+      { task: task, answer: result[:answer], finished: result[:finished], trace: result[:steps] }
+    end
+  end
+
+  def answer_for(span, question, steps)
+    span.span('plan_and_solve.synthesis') do
+      @llm.complete(format(SYNTHESIS, question: question, found: transcript(steps)))
+    end
   end
 
   # No primeiro passo não há nada apurado, e anunciar uma seção vazia só
