@@ -192,6 +192,11 @@ mundo é a API, que exige chave.
 | `POST /search` | `read` | Busca trechos (`query`, `limit`, `filter`) |
 | `POST /ask` | `read` | Pergunta com RAG (`question`, `filter`) |
 
+As classes de agente da Fase 3 — `ReactAgent`, `PlanAndSolveAgent`, `AgentCrew`, `ConversationalAgent` —
+ainda **não têm rota**. Hoje elas são biblioteca, exercitada por RSpec e pelos cenários Cucumber, e o
+`/ask` responde por RAG direto, sem agente e sem memória. Ligar o agente à API é o item 2 do projeto
+integrador ([#5](https://github.com/Hirley/AIAD/issues/5)).
+
 ```bash
 curl -X POST http://127.0.0.1:9292/documents \
   -H 'Authorization: Bearer SUA-CHAVE' -H 'Content-Type: application/json' \
@@ -235,10 +240,17 @@ inteira sem credencial de provedor — para respostas geradas, injete um modelo 
 
 ### Um limite importante do deploy atual
 
-O índice léxico BM25 vive na memória do processo. Por isso o `config/puma.rb` fixa **um worker**: com mais
-de um, cada worker teria seu próprio índice e o braço léxico da busca híbrida passaria a depender de qual
-worker atendeu a requisição. Para escalar horizontalmente, o `Bm25Index` precisa virar índice compartilhado
-(ou dar lugar aos vetores esparsos do próprio Qdrant).
+Boa parte do estado vive na memória do processo: o índice léxico `Bm25Index`, o `ParentStore` com os
+documentos inteiros, o cache semântico que o `CachedRag` cria por filtro e — quando a memória de conversa
+chegar à API — o `ConversationStore` padrão. Por isso o `config/puma.rb` fixa **um worker**: com mais de
+um, cada worker teria a sua própria cópia e a resposta passaria a depender de qual deles atendeu a
+requisição.
+
+Os quatro não pesam igual. O BM25 é o grave, porque muda o resultado da busca híbrida em silêncio — para
+escalar horizontalmente ele precisa virar índice compartilhado, ou dar lugar aos vetores esparsos do
+próprio Qdrant. O cache e o `ParentStore` toleram uma cópia por worker, ao custo de mais chamadas ao
+modelo e mais memória. E a conversa já tem a saída pronta ao lado: o `FileConversationStore` cumpre o
+mesmo contrato e sobrevive ao processo.
 
 ## Testes
 
