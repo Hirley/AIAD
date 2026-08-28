@@ -54,6 +54,9 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Tracer` | Spans aninhados com duração, entrada, saída, tokens e erro; `Tracer.null` desliga tudo a custo zero |
 | `SessionMetrics` | Latência, custo e tokens por sessão, com média, máximo e p95 |
 | `MetricsExporter` | Liga o tracer ao `SessionMetrics`: o que já é instrumentado vira medição |
+| `AnswerEvaluator` | Sustentação no contexto (alucinação) e relevância de resposta e de contexto, com juiz injetável |
+| `EvaluationLog` | Média corrente das notas e a lista das respostas que pontuaram pior |
+| `EvaluatedRag` | Decorador que pontua toda resposta assim que ela sai e alimenta o log |
 
 ### Injeção de dependência
 
