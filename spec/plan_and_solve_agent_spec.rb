@@ -121,4 +121,50 @@ RSpec.describe PlanAndSolveAgent do
       expect(llm.prompts.last).to include(described_class::UNFINISHED_MARK)
     end
   end
+
+  describe 'tracing' do
+    let(:exporter) { CollectingExporter.new }
+    let(:tracer) { Tracer.new(exporter: exporter) }
+
+    def span_names
+      exporter.last[:spans].map { |span| span[:name] }
+    end
+
+    # As três fases têm custos bem diferentes: planejar é uma chamada, resolver
+    # é um agente inteiro por passo, sintetizar é outra chamada. Juntas num
+    # span só, não dá para saber onde doeu.
+    it 'separates planning, each step and the synthesis' do
+      agent_for(llm, executor, tracer: tracer).run('quantos dias?')
+
+      expect(span_names).to eq(%w[plan_and_solve.plan plan_and_solve.step
+                                  plan_and_solve.step plan_and_solve.synthesis])
+    end
+
+    it 'numbers each step span' do
+      agent_for(llm, executor, tracer: tracer).run('quantos dias?')
+
+      steps = exporter.last[:spans].select { |span| span[:name] == 'plan_and_solve.step' }
+
+      expect(steps.map { |span| span[:metadata][:step] }).to eq([1, 2])
+    end
+
+    it 'keeps the parsed plan as the output of the planning span' do
+      agent_for(llm, executor, tracer: tracer).run('quantos dias?')
+
+      expect(exporter.last[:spans].first[:output]).to eq(['Buscar a política de férias.', 'Contar os dias.'])
+    end
+
+    it 'marks a step that did not conclude' do
+      halfway = ScriptedExecutor.new({ answer: 'não deu', finished: false }, 'trinta')
+      agent_for(llm, halfway, tracer: tracer).run('quantos dias?')
+
+      expect(exporter.last[:spans][1][:metadata]).to include(finished: false)
+    end
+
+    it 'answers with the synthesis as the output of the trace' do
+      agent_for(llm, executor, tracer: tracer).run('quantos dias?')
+
+      expect(exporter.last[:output]).to eq('São trinta dias por ano.')
+    end
+  end
 end

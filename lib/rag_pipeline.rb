@@ -4,6 +4,7 @@ require_relative 'prompt_builder'
 require_relative 'prompt_compressor'
 require_relative 'reranker'
 require_relative 'token_counter'
+require_relative 'tracer'
 
 # RAG básico: recupera os trechos mais relevantes, monta o prompt com esse
 # contexto e gera a resposta.
@@ -17,7 +18,8 @@ class RagPipeline
   NO_CONTEXT_ANSWER = 'Não encontrei essa informação nos documentos indexados.'
 
   def initialize(retriever:, llm:, collection:, prompt_builder: PromptBuilder.new, top_k: DEFAULT_TOP_K,
-                 reranker: nil, compressor: nil, context_budget: nil, counter: TokenCounter.new)
+                 reranker: nil, compressor: nil, context_budget: nil, counter: TokenCounter.new,
+                 tracer: Tracer.null)
     @retriever = retriever
     @llm = llm
     @collection = collection
@@ -27,21 +29,40 @@ class RagPipeline
     @compressor = compressor
     @context_budget = context_budget
     @counter = counter
+    @tracer = tracer
   end
 
   def answer(question, filter: nil)
-    passages = compress(retrieve(question, filter: filter))
-    return empty_result(question) if passages.empty?
-
-    prompt = @prompt_builder.build(question, passages)
-    generated = @llm.complete(prompt)
-
-    { question: question, answer: generated, passages: passages,
-      sources: passages.filter_map { |passage| passage[:source] }.uniq, prompt: prompt,
-      cached: false, usage: usage_of(prompt, generated) }
+    @tracer.trace('rag.answer', input: question) { |span| answer_within(span, question, filter) }
   end
 
   private
+
+  def answer_within(span, question, filter)
+    passages = compress(span.span('rag.retrieve') { retrieve(question, filter: filter) })
+    return empty_result(question) if passages.empty?
+
+    prompt = @prompt_builder.build(question, passages)
+    generated, usage = generate(span, prompt)
+
+    { question: question, answer: generated, passages: passages,
+      sources: passages.filter_map { |passage| passage[:source] }.uniq, prompt: prompt,
+      cached: false, usage: usage }
+  end
+
+  # O uso é medido dentro do span e devolvido junto: quem monta a resposta
+  # precisa dele, e ler de volta do span obrigaria o span nulo a guardar
+  # estado só para isso.
+  def generate(span, prompt)
+    span.span('rag.generate', input: prompt) do |generation|
+      text = @llm.complete(prompt)
+      usage = usage_of(prompt, text)
+      generation.output = text
+      generation.usage = usage
+
+      [text, usage]
+    end
+  end
 
   # Com reranker, recupera um pool maior e deixa a reordenação escolher os
   # top_k: reordenar só o que já cabia no contexto não mudaria nada.

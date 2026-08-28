@@ -21,6 +21,8 @@
 #   primeiro nó rodar, não no dia em que aquele ramo for percorrido.
 # - **O caminho fica registrado.** Sem ele não há como explicar por que o grafo
 #   parou onde parou.
+require_relative 'tracer'
+
 class StateGraph
   class UnknownNodeError < StandardError; end
   class InvalidGraphError < StandardError; end
@@ -29,8 +31,10 @@ class StateGraph
   FINISH = :fim
   DEFAULT_MAX_STEPS = 25
 
-  def initialize(max_steps: DEFAULT_MAX_STEPS)
+  def initialize(max_steps: DEFAULT_MAX_STEPS, name: 'graph', tracer: Tracer.null)
     @max_steps = max_steps
+    @name = name
+    @tracer = tracer
     @nodes = {}
     @exits = {}
     @entry = nil
@@ -71,17 +75,23 @@ class StateGraph
 
   def run(state = {})
     ready!
-    walk(state)
+
+    @tracer.trace(@name, input: state) do |span|
+      walk(span, state).tap do |outcome|
+        span.output = outcome[:state]
+        span.annotate(path: outcome[:path], finished: outcome[:finished])
+      end
+    end
   end
 
   private
 
-  def walk(state)
+  def walk(span, state)
     path = []
     current = @entry
 
     @max_steps.times do
-      state = advance(current, state)
+      state = advance(span, current, state, path.size + 1)
       path << current
       current = next_node(current, state)
 
@@ -95,12 +105,21 @@ class StateGraph
     { state: state, path: path, steps: path.size, finished: true }
   end
 
-  def advance(name, state)
-    update = @nodes.fetch(name).call(state)
-    return state if update.nil?
+  # A conferência do que o nó devolveu acontece dentro do span, para o nó que
+  # errou ficar marcado como o que errou.
+  def advance(span, name, state, step)
+    update = span.span(name.to_s, input: state, metadata: { step: step }) do
+      checked(name, @nodes.fetch(name).call(state))
+    end
+
+    update.nil? ? state : state.merge(update)
+  end
+
+  def checked(name, update)
+    return nil if update.nil?
     raise InvalidUpdateError, "o nó #{name} devolveu #{update.class}, e não um Hash" unless update.is_a?(Hash)
 
-    state.merge(update)
+    update
   end
 
   def next_node(name, state)

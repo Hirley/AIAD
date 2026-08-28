@@ -161,4 +161,66 @@ RSpec.describe RagPipeline do
       expect(llm.prompts.last).to include('Divisíveis em três períodos.')
     end
   end
+
+  # Instrumentação nasce desligada: o tracer padrão é o nulo, então nada muda
+  # para quem não pediu observabilidade.
+  describe 'tracing' do
+    let(:exporter) { CollectingExporter.new }
+    let(:tracer) { Tracer.new(exporter: exporter) }
+
+    subject(:rag) do
+      described_class.new(retriever: retriever, llm: llm, collection: 'documentos', tracer: tracer)
+    end
+
+    it 'exports one trace per question' do
+      rag.answer('Quantos dias de férias?')
+
+      expect(exporter.traces.size).to eq(1)
+    end
+
+    it 'records the question as the input of the trace' do
+      rag.answer('Quantos dias de férias?')
+
+      expect(exporter.last[:input]).to eq('Quantos dias de férias?')
+    end
+
+    # É o que se quer ver no gráfico: onde foi o tempo, na busca ou no modelo.
+    it 'separates retrieval from generation' do
+      rag.answer('Quantos dias de férias?')
+
+      expect(exporter.last[:spans].map { |span| span[:name] }).to eq(%w[rag.retrieve rag.generate])
+    end
+
+    it 'records the token usage on the generation span' do
+      rag.answer('Quantos dias de férias?')
+
+      generation = exporter.last[:spans].last
+
+      expect(generation[:usage][:total_tokens]).to be_positive
+    end
+
+    it 'keeps the generated answer as the output of the generation span' do
+      rag.answer('Quantos dias de férias?')
+
+      expect(exporter.last[:spans].last[:output]).to eq('Trinta dias por ano [1].')
+    end
+
+    # Sem contexto o modelo não é chamado, e o trace precisa mostrar isso: um
+    # span de geração que não existiu é a explicação da latência baixa.
+    it 'opens no generation span when there was no context to answer from' do
+      empty = described_class.new(retriever: FakeRetriever.new(results: []), llm: llm,
+                                  collection: 'documentos', tracer: tracer)
+      empty.answer('Quantos dias de férias?')
+
+      expect(exporter.last[:spans].map { |span| span[:name] }).to eq(['rag.retrieve'])
+    end
+
+    it 'does not change the answer' do
+      traced = rag.answer('Quantos dias de férias?')
+      plain = described_class.new(retriever: retriever, llm: llm, collection: 'documentos')
+                             .answer('Quantos dias de férias?')
+
+      expect(traced[:answer]).to eq(plain[:answer])
+    end
+  end
 end

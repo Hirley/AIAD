@@ -122,4 +122,17 @@ RSpec.describe AgentCrew do
   it 'records the path it walked through the graph' do
     expect(crew_for('rh', 'aprovado').run('?')[:path]).to eq(%i[rotear executar revisar])
   end
+
+  # O time não instrumenta nada por conta própria: o rastro vem do grafo em que
+  # ele é montado.
+  describe 'tracing' do
+    let(:exporter) { CollectingExporter.new }
+
+    it 'traces every node of the walk' do
+      described_class.new(llm: ScriptedLlm.new('rh', 'aprovado'), specialists: specialists,
+                          tracer: Tracer.new(exporter: exporter)).run('?')
+
+      expect(exporter.last[:spans].map { |span| span[:name] }).to eq(%w[rotear executar revisar])
+    end
+  end
 end

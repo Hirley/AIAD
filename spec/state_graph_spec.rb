@@ -162,4 +162,72 @@ RSpec.describe StateGraph do
   it 'chains the building calls' do
     expect(graph.node(:passo) { {} }).to be(graph)
   end
+
+  # Instrumentar aqui dá o rastro de qualquer coisa montada sobre o grafo —
+  # o time multi-agente inclusive — sem instrumentar cada uma delas.
+  describe 'tracing' do
+    let(:exporter) { CollectingExporter.new }
+    let(:tracer) { Tracer.new(exporter: exporter) }
+
+    subject(:graph) { described_class.new(tracer: tracer, name: 'fluxo') }
+
+    before do
+      graph.node(:um) { { trilha: 'um' } }
+      graph.node(:dois) { { trilha: 'dois' } }
+      graph.edge(:um, :dois).edge(:dois, StateGraph::FINISH).entry(:um)
+    end
+
+    it 'exports one trace per run' do
+      graph.run
+
+      expect(exporter.traces.size).to eq(1)
+    end
+
+    it 'names the trace after the graph' do
+      graph.run
+
+      expect(exporter.last[:name]).to eq('fluxo')
+    end
+
+    it 'opens one span per node, named after it, in the order they ran' do
+      graph.run
+
+      expect(exporter.last[:spans].map { |span| span[:name] }).to eq(%w[um dois])
+    end
+
+    # Num ciclo o mesmo nó aparece várias vezes; sem o número do passo os spans
+    # ficam indistinguíveis.
+    it 'numbers the step each span belongs to' do
+      graph.run
+
+      expect(exporter.last[:spans].map { |span| span[:metadata][:step] }).to eq([1, 2])
+    end
+
+    it 'records what the node changed as the output of its span' do
+      graph.run
+
+      expect(exporter.last[:spans].first[:output]).to eq(trilha: 'um')
+    end
+
+    it 'annotates the path and how the run ended' do
+      graph.run
+
+      expect(exporter.last[:metadata]).to include(path: %i[um dois], finished: true)
+    end
+
+    # O nó que quebrou é o que se procura no visualizador.
+    it 'marks the span of the node that blew up' do
+      graph.node(:quebrado) { raise 'sem conexão' }
+      graph.edge(:dois, :quebrado).edge(:quebrado, StateGraph::FINISH)
+
+      begin
+        graph.run
+      rescue StandardError
+        nil
+      end
+
+      expect(exporter.last[:spans].last[:name]).to eq('quebrado')
+      expect(exporter.last[:spans].last[:status]).to eq(:error)
+    end
+  end
 end
