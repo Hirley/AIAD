@@ -228,8 +228,29 @@ worker atendeu a requisição. Para escalar horizontalmente, o `Bm25Index` preci
 
 ## Testes
 
+Com Ruby instalado na máquina:
+
 ```bash
+bundle install
 bundle exec rspec      # TDD - testes de unidade
 bundle exec cucumber   # BDD - cenarios de aceitacao (Gherkin em pt)
 bundle exec rubocop    # lint
 ```
+
+Sem Ruby instalado, o compose tem um runner com as gems de teste. O código entra por bind mount, então
+editar o arquivo e rodar de novo não exige rebuild:
+
+```bash
+docker compose run --rm test                          # rspec (comando padrão)
+docker compose run --rm test bundle exec cucumber
+docker compose run --rm test bundle exec rubocop
+```
+
+A suíte inteira, na mesma ordem do CI:
+
+```bash
+docker compose run --rm test bash -lc "bundle exec rubocop && bundle exec rspec && bundle exec cucumber"
+```
+
+O serviço fica atrás do profile `test`, então não sobe junto com a API. Depois de mexer no `Gemfile`,
+refaça a imagem com `docker compose --profile test build test`.

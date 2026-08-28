@@ -1,0 +1,4 @@
+# O Cucumber imprime um banner de dez linhas sobre publicação de relatório a
+# cada execução, escondendo o resumo. Desligado aqui para o resultado da suíte
+# ser a última coisa na saída.
+default: --publish-quiet

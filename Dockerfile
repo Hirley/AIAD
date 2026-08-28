@@ -16,6 +16,21 @@ ENV BUNDLE_DEPLOYMENT=1 \
 COPY Gemfile Gemfile.lock ./
 RUN bundle install && rm -rf "${BUNDLE_PATH}"/cache
 
+# Estágio de teste: a mesma base do build, mas com as gems de teste. Existe
+# porque a imagem final não tem RSpec, Cucumber nem Rubocop — e nem toda
+# máquina de desenvolvimento tem Ruby instalado. O código não é copiado: vem
+# por bind mount do compose, então editar local e rodar de novo não exige
+# rebuild.
+FROM build AS test
+
+ENV BUNDLE_DEPLOYMENT=0 \
+    BUNDLE_WITHOUT="" \
+    RACK_ENV=test
+
+RUN bundle install
+
+CMD ["bundle", "exec", "rspec"]
+
 # Imagem final: sem compilador, sem gems de teste e sem rodar como root.
 FROM ruby:4.0-slim AS runtime
 

@@ -1,0 +1,4 @@
+# O projeto roda em container Linux, e o Rubocop reclama de CR no fim da linha.
+# Sem isso, o checkout no Windows (core.autocrlf) traz CRLF e a suíte acusa
+# ofensa em todo arquivo. Aqui a árvore de trabalho fica em LF em toda máquina.
+* text=auto eol=lf
