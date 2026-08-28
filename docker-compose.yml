@@ -42,6 +42,86 @@ services:
       - .:/app
       - test_bundle:/usr/local/bundle
 
+  # A stack de observabilidade fica atrás de um profile porque custa memória e
+  # não é preciso tê-la de pé para trabalhar na API. Suba com:
+  #
+  #     docker compose --profile observabilidade up -d
+  #
+  prometheus:
+    profiles:
+      - observabilidade
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      AIAD_METRICS_TOKEN: ${AIAD_METRICS_TOKEN:?defina AIAD_METRICS_TOKEN no .env com a chave de escopo metrics}
+    # A chave chega por ambiente e vira arquivo no boot: a configuração do
+    # Prometheus não expande variável de ambiente, e chave escrita no
+    # prometheus.yml seria chave versionada.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '%s' "$$AIAD_METRICS_TOKEN" > /tmp/metrics-token
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml \
+          --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=7d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    expose:
+      - "9090"
+
+  loki:
+    profiles:
+      - observabilidade
+    image: grafana/loki:2.9.10
+    restart: unless-stopped
+    volumes:
+      - loki_data:/loki
+    expose:
+      - "3100"
+
+  promtail:
+    profiles:
+      - observabilidade
+    image: grafana/promtail:2.9.10
+    restart: unless-stopped
+    depends_on:
+      - loki
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./observability/promtail.yml:/etc/promtail/promtail.yml:ro
+      # Só leitura, e só o socket: o Promtail precisa dele para descobrir os
+      # containers e ler o log de cada um. É um privilégio grande — quem lê o
+      # socket do Docker manda no Docker —, aceitável numa stack local e que
+      # num deploy real seria trocado por um agente sem esse acesso.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  grafana:
+    profiles:
+      - observabilidade
+    image: grafana/grafana:11.5.1
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?defina GRAFANA_PASSWORD no .env antes de subir}
+      # Sem telemetria e sem checar atualização: a stack roda offline.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+
 volumes:
   qdrant_storage:
   test_bundle:
+  prometheus_data:
+  loki_data:
+  grafana_data:

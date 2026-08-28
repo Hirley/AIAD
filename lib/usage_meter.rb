@@ -39,6 +39,17 @@ class UsageMeter
     end
   end
 
+  # Método de classe porque não é só este medidor que precisa da conta: o
+  # exportador para o Prometheus calcula o mesmo custo sem acumular nada em
+  # memória. Duas implementações de "quanto custou" divergiriam na primeira
+  # mudança de tabela de preço.
+  def self.cost_of(prices, model, prompt_tokens, completion_tokens)
+    price = prices[model]
+    return 0.0 if price.nil?
+
+    ((prompt_tokens * price[:input].to_f) + (completion_tokens * price[:output].to_f)) / PER_MILLION
+  end
+
   private
 
   def accumulate(totals, usage)
@@ -54,9 +65,6 @@ class UsageMeter
   end
 
   def cost_of(model, prompt_tokens, completion_tokens)
-    price = @prices[model]
-    return 0.0 if price.nil?
-
-    ((prompt_tokens * price[:input].to_f) + (completion_tokens * price[:output].to_f)) / PER_MILLION
+    self.class.cost_of(@prices, model, prompt_tokens, completion_tokens)
   end
 end

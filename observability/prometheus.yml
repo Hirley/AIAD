@@ -1,0 +1,28 @@
+# Coleta das métricas da API.
+#
+# O `/metrics` da AIAD exige o escopo `metrics`, então o Prometheus precisa de
+# credencial como qualquer outro cliente. A chave **não** mora aqui: este
+# arquivo é versionado, e chave em arquivo versionado é chave vazada. Ela chega
+# por `credentials_file`, escrito no boot a partir de `AIAD_METRICS_TOKEN` —
+# o Prometheus não expande variável de ambiente na configuração, então o
+# rodeio é necessário.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: aiad-api
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /tmp/metrics-token
+    static_configs:
+      - targets: ['api:9292']
+        labels:
+          servico: aiad
+
+  # O Prometheus raspando a si mesmo: é assim que se descobre que a coleta
+  # parou, porque um alvo que sumiu não avisa que sumiu.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

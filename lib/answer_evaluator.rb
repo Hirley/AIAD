@@ -96,7 +96,16 @@ class AnswerEvaluator
     (Tokenizer.tokens(text) - STOPWORDS).uniq
   end
 
+  # Fragmento sem letra nenhuma não é afirmação, e por isso não entra na conta.
+  # O caso concreto é o marcador de citação: "…trinta dias. [1]" quebra em três
+  # pedaços, e o "[1]" sozinho ficava marcado como não sustentado. O efeito era
+  # perverso — toda resposta **corretamente citada** perdia um terço da nota,
+  # justamente por fazer o que se pede que ela faça.
   def sentences_of(answer)
-    answer.to_s.split(SENTENCE).map(&:strip).reject(&:empty?)
+    answer.to_s.split(SENTENCE).map(&:strip).select { |sentence| claim?(sentence) }
+  end
+
+  def claim?(sentence)
+    sentence.match?(/[[:alpha:]]/)
   end
 end

@@ -32,3 +32,11 @@ Lint/EmptyFile:
 Style/TrivialAccessors:
   Exclude:
     - "features/step_definitions/**/*"
+
+# O PrometheusEvaluationLog recebe `question` e `answer` e nao usa nenhum dos
+# dois de proposito: a assinatura e a do EvaluationLog, e e ela que permite
+# trocar um pelo outro no EvaluatedRag. Usar o texto ali e justamente o que nao
+# se quer -- pergunta de usuario nao vira rotulo de metrica.
+Lint/UnusedMethodArgument:
+  Exclude:
+    - "lib/prometheus_evaluation_log.rb"
