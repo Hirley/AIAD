@@ -47,6 +47,11 @@ services:
   #
   #     docker compose --profile observabilidade up -d
   #
+  # As variáveis daqui usam `:-` e são conferidas no boot de cada serviço, e não
+  # `:?` na interpolação. O motivo é concreto: o compose interpola o arquivo
+  # **inteiro** antes de filtrar por profile, então um `:?` aqui derruba até o
+  # `docker compose up` de quem nunca vai subir a stack. A obrigatoriedade
+  # continua existindo — só migrou para o lugar onde ela é de fato necessária.
   prometheus:
     profiles:
       - observabilidade
@@ -55,7 +60,7 @@ services:
     depends_on:
       - api
     environment:
-      AIAD_METRICS_TOKEN: ${AIAD_METRICS_TOKEN:?defina AIAD_METRICS_TOKEN no .env com a chave de escopo metrics}
+      AIAD_METRICS_TOKEN: ${AIAD_METRICS_TOKEN:-}
     # A chave chega por ambiente e vira arquivo no boot: a configuração do
     # Prometheus não expande variável de ambiente, e chave escrita no
     # prometheus.yml seria chave versionada.
@@ -63,6 +68,10 @@ services:
       - /bin/sh
       - -c
       - |
+        if [ -z "$$AIAD_METRICS_TOKEN" ]; then
+          echo "defina AIAD_METRICS_TOKEN no .env com a chave de escopo metrics" >&2
+          exit 1
+        fi
         printf '%s' "$$AIAD_METRICS_TOKEN" > /tmp/metrics-token
         exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml \
           --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=7d
@@ -107,11 +116,22 @@ services:
       - prometheus
       - loki
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?defina GRAFANA_PASSWORD no .env antes de subir}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-}
       # Sem telemetria e sem checar atualização: a stack roda offline.
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+    # Senha vazia é recusada no boot em vez de virar o `admin` padrão do
+    # Grafana: senha padrão que ninguém escolheu é a que ninguém troca.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$GF_SECURITY_ADMIN_PASSWORD" ]; then
+          echo "defina GRAFANA_PASSWORD no .env antes de subir" >&2
+          exit 1
+        fi
+        exec /run.sh
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
