@@ -4,6 +4,7 @@ require 'json'
 
 require_relative '../api_key_store'
 require_relative 'access_policy'
+require_relative 'json_content_type'
 
 module Api
   # Middleware de controle de acesso: autentica a chave de API e verifica o
@@ -58,7 +59,7 @@ module Api
     def error(status, message, headers = {})
       body = JSON.generate(error: message)
 
-      [status, { 'content-type' => 'application/json' }.merge(headers), [body]]
+      [status, { 'content-type' => JSON_CONTENT_TYPE }.merge(headers), [body]]
     end
   end
 end

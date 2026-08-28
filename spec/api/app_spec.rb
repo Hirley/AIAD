@@ -42,6 +42,25 @@ RSpec.describe Api::App do
     end
   end
 
+  # Pela RFC 8259 JSON é sempre UTF-8 e o charset é redundante — mas cliente
+  # que não sabe disso assume ISO-8859-1 e transforma "Não encontrei" em
+  # "NÃ£o encontrei". O Invoke-RestMethod do PowerShell 5.1 faz exatamente
+  # isso.
+  describe 'codificação da resposta' do
+    it 'declares the charset, so a client does not have to guess it' do
+      get '/health'
+
+      expect(last_response.headers['content-type']).to eq('application/json; charset=utf-8')
+    end
+
+    it 'keeps the accents intact when the answer is read as UTF-8' do
+      ingest_sample
+      post_json('/ask', question: 'quantos dias de férias por ano')
+
+      expect(last_response.body.force_encoding('UTF-8')).to include('férias')
+    end
+  end
+
   describe 'POST /documents' do
     it 'ingests the document and answers 201' do
       ingest_sample
