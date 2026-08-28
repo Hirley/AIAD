@@ -11,6 +11,11 @@ services:
 
   api:
     build: .
+    # Nomeia a imagem que o compose constrói, em vez de deixar o nome derivado
+    # do diretório do projeto. Assim `docker compose up --build` e
+    # `docker build -t aiad:latest .` produzem a mesma tag, e o que se testa
+    # aqui é o que iria para um registry.
+    image: aiad:latest
     restart: unless-stopped
     depends_on:
       - qdrant

@@ -213,6 +213,23 @@ curl -X POST http://127.0.0.1:9292/ask \
   -d '{"question":"quantos dias de férias por ano"}'
 ```
 
+### A imagem
+
+O `docker compose up` constrói o que precisa, mas a imagem final também se constrói sozinha — é o que um
+registry ou um deploy fora do compose vai querer:
+
+```bash
+docker build -t aiad:latest .
+```
+
+O `runtime` é o último estágio do `Dockerfile` de propósito: `build: .` sem `target` pega sempre a imagem
+final, nunca a de teste. O estágio `build` compila as gems nativas e fica para trás; o que atravessa é só
+o bundle já compilado, sem `build-essential` e sem as gems de teste. Dá ~285 MB rodando como o usuário
+`aiad`, não como root.
+
+A imagem sozinha sobe e responde `200` em `/health`, `401` em qualquer rota sem chave — e `503` no `/ask`,
+porque sem Qdrant na rede não há o que buscar. Para exercitar de verdade, é o compose.
+
 ### Controle de acesso
 
 Autenticação por chave de API no header `Authorization: Bearer <chave>`, com autorização por escopo:
