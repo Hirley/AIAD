@@ -44,6 +44,13 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `ReactAgent` | Laço ReAct: pensamento → ação → observação, com teto de iterações e trajeto registrado |
 | `PlanParser` | Leitura do plano numerado que o modelo escreveu |
 | `PlanAndSolveAgent` | Planeja antes de agir, executa passo a passo alimentando o seguinte e sintetiza a resposta |
+| `SpecialistTool` | Embrulha um agente inteiro como ferramenta, para o time tratar especialista e ferramenta igual |
+| `StateGraph` | Grafo de estado: nós que transformam o estado e arestas (fixas ou condicionais) que decidem o próximo |
+| `AgentCrew` | Time multi-agente sobre o grafo: rotear → executar → revisar, com a revisão devolvendo o trabalho |
+| `ConversationStore` | Guarda a conversa em memória, uma lista de turnos por id |
+| `FileConversationStore` | Mesmo contrato, em disco: o histórico sobrevive ao processo |
+| `ConversationMemory` | Turnos da conversa e o pedaço do histórico que cabe no orçamento de tokens |
+| `ConversationalAgent` | Dá memória a qualquer agente: histórico junto da pergunta nova, resposta registrada |
 
 ### Injeção de dependência
 
