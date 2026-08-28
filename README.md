@@ -51,6 +51,9 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `FileConversationStore` | Mesmo contrato, em disco: o histórico sobrevive ao processo |
 | `ConversationMemory` | Turnos da conversa e o pedaço do histórico que cabe no orçamento de tokens |
 | `ConversationalAgent` | Dá memória a qualquer agente: histórico junto da pergunta nova, resposta registrada |
+| `Tracer` | Spans aninhados com duração, entrada, saída, tokens e erro; `Tracer.null` desliga tudo a custo zero |
+| `SessionMetrics` | Latência, custo e tokens por sessão, com média, máximo e p95 |
+| `MetricsExporter` | Liga o tracer ao `SessionMetrics`: o que já é instrumentado vira medição |
 
 ### Injeção de dependência
 
