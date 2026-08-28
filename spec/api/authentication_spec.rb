@@ -78,6 +78,18 @@ RSpec.describe Api::Authentication do
 
       expect(json_body['error']).to include('write')
     end
+
+    # Um 403 é justamente o caso em que se quer saber quem foi recusado: a
+    # credencial era válida. Por isso o principal entra no env antes da
+    # checagem de escopo, e o log estruturado consegue nomeá-lo.
+    it 'records who was refused, so the log can name them' do
+      environment = { 'REQUEST_METHOD' => 'POST', 'PATH_INFO' => '/documents',
+                      'HTTP_AUTHORIZATION' => 'Bearer chave-leitura' }
+      status, = described_class.new(downstream, store: store).call(environment)
+
+      expect(status).to eq(403)
+      expect(environment['aiad.principal']).to include(name: 'leitor')
+    end
   end
 
   describe 'credencial válida' do

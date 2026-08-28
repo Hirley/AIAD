@@ -8,6 +8,16 @@ RSpec.describe Api::AccessPolicy do
       expect(described_class.scope_for('GET', '/health')).to be_nil
     end
 
+    # Escopo próprio, e não `read`: o Prometheus não precisa ler documento para
+    # raspar métrica, e quem lê documento não precisa ver a operação por dentro.
+    it 'requires its own scope to scrape the metrics' do
+      expect(described_class.scope_for('GET', '/metrics')).to eq(:metrics)
+    end
+
+    it 'does not leave the metrics public, unlike the health check' do
+      expect(described_class.scope_for('GET', '/metrics')).not_to be_nil
+    end
+
     it 'requires write to ingest documents' do
       expect(described_class.scope_for('POST', '/documents')).to eq(:write)
     end

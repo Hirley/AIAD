@@ -2,6 +2,8 @@
 
 require_relative '../api_key_store'
 require_relative '../cached_rag'
+require_relative '../metric_registry'
+require_relative '../process_collector'
 require_relative '../bm25_index'
 require_relative '../embedding_generator'
 require_relative '../etl_pipeline'
@@ -17,6 +19,9 @@ require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
 require_relative 'app'
 require_relative 'authentication'
+require_relative 'instrumentation'
+require_relative 'metrics_endpoint'
+require_relative 'request_logger'
 
 module Api
   DEFAULT_COLLECTION = 'documentos'
@@ -31,7 +36,7 @@ module Api
   # rodar e para desenvolvimento, mas num deploy com vários workers cada um teria
   # o seu — o braço BM25 precisaria de um índice compartilhado (ou dos vetores
   # esparsos do próprio Qdrant) para valer em produção.
-  def self.build(env: ENV)
+  def self.build(env: ENV, registry: instrumented_registry, logs: $stdout)
     collection = collection_for(env)
     options = retrieval_options(env)
     lexical_index = Bm25Index.new
@@ -41,8 +46,31 @@ module Api
 
     retriever = retriever_for(etl, lexical_index, parent_store, llm, options)
     rag = rag_pipeline(retriever, llm, collection, options)
+    app = MetricsEndpoint.new(App.new(etl: etl, rag: rag, collection: collection), registry: registry)
 
-    Authentication.new(App.new(etl: etl, rag: rag, collection: collection), store: ApiKeyStore.from_env(env))
+    observed(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry, logs)
+  end
+
+  # A ordem da pilha não é acidental. Log e métrica ficam **por fora** da
+  # autenticação, para que 401 e 403 apareçam no gráfico e no log: um pico de
+  # 401 é chave rotacionada sem avisar ou alguém tentando adivinhar credencial,
+  # e não dá para ver isso se a requisição morre antes de ser contada. Já o
+  # `/metrics` fica **por dentro**, porque é uma rota como qualquer outra e
+  # precisa passar pelo mesmo controle de acesso.
+  def self.observed(app, registry, logs)
+    RequestLogger.new(Instrumentation.new(app, registry: registry), io: logs,
+                                                                    route: Instrumentation.method(:route_for))
+  end
+
+  # O registro nasce com as métricas já declaradas: métrica que só aparece
+  # depois da primeira requisição faz o painel dizer "sem dados" onde a verdade
+  # é "zero", e essas duas coisas se investigam de formas bem diferentes.
+  def self.instrumented_registry
+    registry = MetricRegistry.new
+    Instrumentation.install(registry)
+    ProcessCollector.new.install(registry)
+
+    registry
   end
 
   # Ligados por padrão: re-ranking e cache semântico, que melhoram a resposta

@@ -12,6 +12,11 @@ module Api
 
     RULES = {
       ['GET', '/health'] => PUBLIC,
+      # /metrics tem escopo próprio, e não `read`: quem consulta documentos não
+      # precisa ver latência, rota e status da operação, e o Prometheus não
+      # precisa ler documento nenhum para raspar métrica. Menor privilégio nas
+      # duas direções.
+      ['GET', '/metrics'] => :metrics,
       ['POST', '/documents'] => :write,
       ['POST', '/search'] => :read,
       ['POST', '/ask'] => :read
