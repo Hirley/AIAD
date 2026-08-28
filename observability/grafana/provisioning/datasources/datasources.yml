@@ -1,0 +1,18 @@
+# Fontes de dados provisionadas por arquivo, e não clicadas na interface: um
+# painel que só existe no banco do Grafana morre com o volume, e ninguém
+# consegue revisar num pull request o que foi configurado.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100

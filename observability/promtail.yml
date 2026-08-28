@@ -1,0 +1,44 @@
+# Coleta dos logs dos containers e envio para o Loki.
+#
+# A descoberta é pelo socket do Docker, e não por arquivo em
+# `/var/lib/docker/containers`: no Docker Desktop esse diretório vive dentro da
+# VM e não se monta do host. Pelo socket funciona igual nos dois mundos.
+#
+# A disciplina de cardinalidade é a mesma do Prometheus, e pelo mesmo motivo:
+# no Loki cada combinação de rótulos é um fluxo indexado. Viram rótulo só
+# `container`, `level` e `route` — todos de valores contados. O resto do JSON
+# continua na linha, pesquisável, sem virar índice.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: stream
+    pipeline_stages:
+      # A API escreve JSON, mas o Puma escreve as linhas de subida em prosa.
+      # Linha que não é JSON passa direto, sem campo extraído e sem erro: o
+      # log de boot continua legível no Loki.
+      - json:
+          expressions:
+            level: level
+            route: route
+            status: status
+            request_id: request_id
+      - labels:
+          level:
+          route:

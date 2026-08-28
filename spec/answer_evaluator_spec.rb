@@ -19,6 +19,21 @@ RSpec.describe AnswerEvaluator do
       expect(evaluate('A política garante trinta dias por ano.')[:groundedness]).to eq(1.0)
     end
 
+    # O marcador de citação quebra como se fosse uma frase, e sozinho não tem
+    # apoio em lugar nenhum. Contá-lo punia a resposta por fazer exatamente o
+    # que se pede que ela faça: citar a origem.
+    it 'does not punish an answer for carrying the citation marker' do
+      expect(evaluate('A política garante trinta dias por ano. [1]')[:groundedness]).to eq(1.0)
+    end
+
+    it 'does not count the citation marker as a sentence' do
+      expect(evaluate('A política garante trinta dias por ano. [1]')[:sentences]).to eq(1)
+    end
+
+    it 'keeps the marker out of the unsupported list' do
+      expect(evaluate('A política garante trinta dias por ano. [1]')[:unsupported]).to be_empty
+    end
+
     it 'gives zero to an answer the context says nothing about' do
       expect(evaluate('O reajuste salarial sai em dezembro.')[:groundedness]).to eq(0.0)
     end

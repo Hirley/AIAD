@@ -1,22 +1,26 @@
 # frozen_string_literal: true
 
 require_relative '../api_key_store'
-require_relative '../cached_rag'
-require_relative '../metric_registry'
-require_relative '../process_collector'
 require_relative '../bm25_index'
+require_relative '../cached_rag'
 require_relative '../embedding_generator'
 require_relative '../etl_pipeline'
+require_relative '../evaluated_rag'
 require_relative '../extractive_llm'
 require_relative '../http_qdrant_transport'
 require_relative '../hybrid_retriever'
 require_relative '../hyde_retriever'
+require_relative '../metric_registry'
 require_relative '../parent_document_retriever'
+require_relative '../process_collector'
+require_relative '../prometheus_evaluation_log'
+require_relative '../prometheus_trace_exporter'
 require_relative '../prompt_compressor'
-require_relative '../reranker'
-require_relative '../semantic_cache'
 require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
+require_relative '../reranker'
+require_relative '../semantic_cache'
+require_relative '../tracer'
 require_relative 'app'
 require_relative 'authentication'
 require_relative 'instrumentation'
@@ -45,7 +49,7 @@ module Api
     llm = llm_for(env)
 
     retriever = retriever_for(etl, lexical_index, parent_store, llm, options)
-    rag = rag_pipeline(retriever, llm, collection, options)
+    rag = rag_pipeline(retriever, llm, collection, options, registry)
     app = MetricsEndpoint.new(App.new(etl: etl, rag: rag, collection: collection), registry: registry)
 
     observed(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry, logs)
@@ -69,6 +73,8 @@ module Api
     registry = MetricRegistry.new
     Instrumentation.install(registry)
     ProcessCollector.new.install(registry)
+    PrometheusTraceExporter.install(registry)
+    PrometheusEvaluationLog.install(registry)
 
     registry
   end
@@ -83,6 +89,7 @@ module Api
       cache: flag(env, 'AIAD_CACHE', default: true),
       hyde: flag(env, 'AIAD_HYDE', default: false),
       parent_documents: flag(env, 'AIAD_PARENT_DOCUMENTS', default: false),
+      evaluate: flag(env, 'AIAD_EVALUATE', default: true),
       context_budget: Integer(env.fetch('AIAD_CONTEXT_BUDGET', DEFAULT_CONTEXT_BUDGET))
     }
   end
@@ -105,12 +112,19 @@ module Api
   end
   private_class_method :retriever_for
 
-  def self.rag_pipeline(retriever, llm, collection, options)
+  # A ordem dos decoradores importa. A avaliação fica **por dentro** do cache:
+  # resposta servida do cache já foi avaliada quando entrou, e pontuá-la de novo
+  # gastaria CPU para chegar na mesma nota e contaria a mesma resposta duas
+  # vezes no histograma — inflando a média com repetição em vez de medir
+  # respostas novas.
+  def self.rag_pipeline(retriever, llm, collection, options, registry)
     rag = RagPipeline.new(
       retriever: retriever, llm: llm, collection: collection, top_k: DEFAULT_TOP_K,
       reranker: (Reranker.new if options[:rerank]),
-      compressor: PromptCompressor.new, context_budget: options[:context_budget]
+      compressor: PromptCompressor.new, context_budget: options[:context_budget],
+      tracer: Tracer.new(exporter: PrometheusTraceExporter.new(registry: registry))
     )
+    rag = EvaluatedRag.new(rag: rag, log: PrometheusEvaluationLog.new(registry: registry)) if options[:evaluate]
 
     options[:cache] ? CachedRag.new(rag: rag) : rag
   end

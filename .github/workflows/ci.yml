@@ -83,6 +83,22 @@ jobs:
           echo "$resposta"
           echo "$resposta" | grep -q 'politica.txt'
 
+      # Regressão do bug em que a busca vetorial voltava sem payload. Só
+      # aparece depois de reiniciar: enquanto o processo vive, o índice BM25 em
+      # memória ainda tem o texto e a fusão RRF entrega a origem pelo braço
+      # léxico. Reiniciada, a API depende só do Qdrant — e era aí que ela
+      # respondia "não encontrei" para documento indexado.
+      - name: O documento indexado sobrevive ao restart da API
+        run: |
+          docker compose restart api
+          docker compose up --detach --wait --wait-timeout 120 api
+          resposta=$(curl -sf -X POST http://127.0.0.1:9292/ask \
+            -H 'Authorization: Bearer chave-de-ci-leitura' -H 'Content-Type: application/json' \
+            -d '{"question":"quantos dias de férias por ano"}')
+          echo "$resposta"
+          echo "$resposta" | grep -q 'politica.txt'
+          echo "$resposta" | grep -q 'trinta dias'
+
       - name: Logs em caso de falha
         if: failure()
         run: docker compose logs

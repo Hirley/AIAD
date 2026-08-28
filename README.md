@@ -63,6 +63,8 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::Instrumentation` | Middleware que conta e cronometra requisições, com a rota normalizada |
 | `Api::MetricsEndpoint` | Serve `GET /metrics`, dentro do controle de acesso |
 | `Api::RequestLogger` | Uma linha JSON por requisição, sem corpo e sem credencial |
+| `PrometheusTraceExporter` | Publica tokens, custo e latência de modelo no registro, span a span |
+| `PrometheusEvaluationLog` | Publica as notas de avaliação no registro, sem levar o texto junto |
 
 ### Injeção de dependência
 
@@ -309,10 +311,84 @@ Um `403` nomeia quem foi recusado: a credencial era válida, e "quem tentou o qu
 depois. Por isso a `Authentication` põe o principal no env **antes** de checar o escopo — o que não abre
 nada, porque num `403` a requisição não chega na aplicação.
 
-Ainda não estão aqui: a stack Prometheus + Grafana + Loki no compose e o dashboard executivo, que são os
-itens 4 a 6 da [#4](https://github.com/Hirley/AIAD/issues/4). As métricas de LLM (tokens, custo, notas de
-avaliação) também ainda não saem pelo `/metrics` — hoje vivem no `SessionMetrics` e no `EvaluationLog`, e
-juntá-las ao painel é o último item.
+O que **não** está aqui e um deploy real precisaria: amostragem de log (hoje toda requisição vira uma
+linha, o que numa carga alta é caro), retenção configurável e correlação automática entre o
+`request_id` do log e o id do trace.
+
+### Métricas de LLM
+
+Além das de infraestrutura, o `/metrics` publica o que o modelo custou e o quanto se pode confiar na
+resposta:
+
+| Métrica | Tipo | O que responde |
+| --- | --- | --- |
+| `aiad_llm_calls_total` | contador | Quantas vezes o modelo foi acionado, por modelo |
+| `aiad_llm_prompt_tokens_total` | contador | Tokens gastos em prompt |
+| `aiad_llm_completion_tokens_total` | contador | Tokens gastos em resposta |
+| `aiad_llm_cost_usd_total` | contador | Custo acumulado |
+| `aiad_llm_latency_seconds` | histograma | Duração das chamadas ao modelo |
+| `aiad_llm_groundedness` | histograma | Fração das frases sustentadas pelo contexto |
+| `aiad_llm_answer_relevancy` | histograma | Quanto a resposta trata da pergunta feita |
+| `aiad_llm_context_relevancy` | histograma | Quanto do contexto recuperado serve |
+| `aiad_llm_unsupported_sentences_total` | contador | Afirmações sem apoio que saíram para o usuário |
+
+Decisões que valem registrar:
+
+- **A latência medida é a do span que gastou token, não a da raiz.** A raiz inclui recuperação,
+  compressão e montagem de prompt; chamar aquilo de "latência do modelo" seria culpar o modelo pelo tempo
+  da busca. Comparar essa métrica com a latência do `/ask` no painel de infraestrutura é o que diz se o
+  gargalo é o modelo ou a recuperação.
+- **O critério é ter gasto token, não o nome do span.** Renomear um span não pode apagar a métrica. E
+  como a varredura é na árvore inteira, um agente que chama o modelo cinco vezes rende cinco
+  observações, não uma média achatada.
+- **Pergunta sem contexto não é chamada de modelo.** O pipeline responde sem chamar o modelo; contar
+  isso afundaria o custo médio por chamada e mentiria sobre quantas vezes o modelo foi acionado.
+- **Pergunta e resposta nunca viram métrica.** Texto de usuário como rótulo é cardinalidade infinita — e
+  o conteúdo acabaria guardado para sempre num sistema que ninguém trata como base de dados pessoais. O
+  texto fica no log.
+- **A avaliação fica por dentro do cache.** Resposta servida do cache já foi avaliada quando entrou;
+  pontuá-la de novo contaria a mesma resposta duas vezes no histograma, inflando a média com repetição.
+  Desligue com `AIAD_EVALUATE=0` se o custo de CPU por resposta incomodar.
+- **Custo sai da mesma conta do `UsageMeter`.** Duas definições de "quanto custou" divergiriam na
+  primeira mudança de tabela de preço. Sem preço configurado o custo é zero explícito — e o
+  `ExtractiveLlm`, que é o padrão, realmente não custa nada.
+
+Diferente do `SessionMetrics`, que guarda uma entrada por chamada e por sessão em memória, este caminho
+tem memória fixa: um punhado de séries, não importa quantas perguntas cheguem. Quem guarda série temporal
+é o Prometheus.
+
+### A stack de observabilidade
+
+Prometheus, Grafana, Loki e Promtail sobem juntos, atrás de um profile — não é preciso tê-los de pé para
+trabalhar na API, e eles custam memória:
+
+```bash
+docker compose --profile observabilidade up -d
+```
+
+O Grafana fica em `http://127.0.0.1:3000` (usuário `admin`, senha em `GRAFANA_PASSWORD`), com dois
+painéis já provisionados:
+
+| Painel | Para quem olha |
+| --- | --- |
+| **AIAD — Infraestrutura e API** | Throughput, latência p95 e p99, memória, CPU, requisições em andamento, recusas de credencial e o log ao vivo |
+| **AIAD — LLM: custo e qualidade** | Custo por pergunta, tokens por minuto, as três notas ao longo do tempo, latência do modelo e frases sem apoio |
+
+Decisões que valem registrar:
+
+- **Fontes de dados e painéis são provisionados por arquivo, não clicados na interface.** Painel que só
+  existe no banco do Grafana morre com o volume, e ninguém consegue revisar num pull request o que foi
+  configurado.
+- **A chave do Prometheus não mora no `prometheus.yml`.** O arquivo é versionado, e chave em arquivo
+  versionado é chave vazada. Ela chega por `AIAD_METRICS_TOKEN` e vira arquivo no boot, porque a
+  configuração do Prometheus não expande variável de ambiente.
+- **O Promtail descobre containers pelo socket do Docker**, e não por arquivo em
+  `/var/lib/docker/containers`: no Docker Desktop esse diretório vive dentro da VM. É um privilégio
+  grande — quem lê o socket do Docker manda no Docker — aceitável numa stack local e que num deploy real
+  seria trocado por um agente sem esse acesso.
+- **No Loki a disciplina de cardinalidade é a mesma.** Viram rótulo só `container`, `level` e `route`. O
+  resto do JSON continua na linha, pesquisável, sem virar índice.
+- **Só o Grafana publica porta.** Prometheus e Loki ficam na rede interna do compose, como o Qdrant.
 
 ### Modelo de linguagem
 
