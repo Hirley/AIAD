@@ -28,9 +28,14 @@ module Api
 
       principal = @store.authenticate(token_from(env))
       return unauthorized if principal.nil?
+
+      # O principal entra no env **antes** da checagem de escopo: um 403 é
+      # justamente o caso em que se quer saber quem foi recusado, e é do env
+      # que o log estruturado lê o nome. Não abre nada — num 403 a requisição
+      # não chega na aplicação.
+      env[PRINCIPAL_KEY] = principal
       return forbidden(scope) unless principal[:scopes].include?(scope)
 
-      env[PRINCIPAL_KEY] = principal
       @app.call(env)
     end
 

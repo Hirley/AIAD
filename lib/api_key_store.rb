@@ -7,6 +7,10 @@ require 'openssl'
 #
 # Formato: `nome:chave:escopo1,escopo2;outro:chave2:escopo`.
 #
+# Escopos: `read` consulta, `write` ingere, `metrics` raspa `/metrics`. O
+# terceiro existe separado porque quem coleta métrica não precisa ler documento,
+# e quem lê documento não precisa ver a operação por dentro.
+#
 # As chaves são guardadas apenas como digest SHA-256 e comparadas em tempo
 # constante, para que uma chave inválida não vaze por quanto tempo a comparação
 # leva. O inspect também é sobrescrito, para que a chave não apareça em log de
@@ -14,7 +18,7 @@ require 'openssl'
 class ApiKeyStore
   class ConfigurationError < StandardError; end
 
-  SCOPES = %i[read write].freeze
+  SCOPES = %i[read write metrics].freeze
   ENV_VAR = 'AIAD_API_KEYS'
 
   def initialize(entries = {})

@@ -27,7 +27,7 @@ jobs:
     # No nível do job: o compose interpola o arquivo em todo comando, inclusive
     # no down, então a variável precisa existir até no teardown.
     env:
-      AIAD_API_KEYS: leitor:chave-de-ci-leitura:read;ingestor:chave-de-ci-total:read,write
+      AIAD_API_KEYS: leitor:chave-de-ci-leitura:read;ingestor:chave-de-ci-total:read,write;prometheus:chave-de-ci-metricas:metrics
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +41,29 @@ jobs:
       - name: Rota protegida recusa quem não tem chave
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/search)" = "401"
+
+      # O escopo próprio do /metrics precisa valer nas duas direções: sem chave
+      # não passa, e chave de leitura de documento também não.
+      - name: /metrics só responde a quem tem o escopo metrics
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/metrics)" = "401"
+          status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/metrics \
+            -H 'Authorization: Bearer chave-de-ci-leitura')
+          test "$status" = "403"
+
+      - name: As métricas saem no formato do Prometheus
+        run: |
+          metricas=$(curl -sf http://127.0.0.1:9292/metrics -H 'Authorization: Bearer chave-de-ci-metricas')
+          echo "$metricas" | grep -q '^# TYPE aiad_http_requests_total counter$'
+          echo "$metricas" | grep -q '^aiad_process_cpu_seconds_total '
+          echo "$metricas" | grep -q 'route="/health",status="200"'
+
+      - name: O log da API sai em JSON, uma linha por requisição
+        run: |
+          linha=$(docker compose logs --no-log-prefix api | grep '"path":"/health"' | tail -1)
+          echo "$linha"
+          test "$(echo "$linha" | jq -r '.status')" = "200"
+          test "$(echo "$linha" | jq -r '.route')" = "/health"
 
       - name: Chave de leitura não pode ingerir
         run: |

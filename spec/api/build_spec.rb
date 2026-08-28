@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'rack/test'
+require 'stringio'
 
 require_relative '../../lib/api/build'
 
@@ -8,11 +9,15 @@ RSpec.describe 'Api.build' do
   include Rack::Test::Methods
 
   let(:environment) do
-    { 'QDRANT_URL' => 'http://qdrant:6333', 'AIAD_API_KEYS' => 'robo:chave-total:read,write' }
+    { 'QDRANT_URL' => 'http://qdrant:6333',
+      'AIAD_API_KEYS' => 'robo:chave-total:read,write;prometheus:chave-metricas:metrics' }
   end
+  # O log estruturado vai para um StringIO na suíte: em produção ele vai para a
+  # saída padrão, que é onde o coletor lê.
+  let(:logs) { StringIO.new }
 
   def app
-    Api.build(env: environment)
+    Api.build(env: environment, logs: logs)
   end
 
   it 'builds a rack application' do
@@ -37,6 +42,66 @@ RSpec.describe 'Api.build' do
 
     # 422 (e não 401/403) prova que a credencial passou pelo controle de acesso.
     expect(last_response.status).to eq(422)
+  end
+
+  describe 'observabilidade' do
+    def scrape
+      get '/metrics', {}, 'HTTP_AUTHORIZATION' => 'Bearer chave-metricas'
+    end
+
+    it 'exposes the metrics to a key with the metrics scope' do
+      scrape
+
+      expect(last_response.status).to eq(200)
+    end
+
+    it 'does not expose the metrics to whoever has no key' do
+      get '/metrics'
+
+      expect(last_response.status).to eq(401)
+    end
+
+    # Quem lê documentos não precisa ver latência, rota e status da operação.
+    it 'does not expose the metrics to a key that only reads documents' do
+      get '/metrics', {}, 'HTTP_AUTHORIZATION' => 'Bearer chave-total'
+
+      expect(last_response.status).to eq(403)
+    end
+
+    it 'publishes the process metrics from the first scrape' do
+      scrape
+
+      expect(last_response.body).to include('aiad_process_cpu_seconds_total')
+    end
+
+    it 'counts the requests it served' do
+      get '/health'
+      scrape
+
+      expect(last_response.body).to include(%(route="/health",status="200"))
+    end
+
+    # Métrica e log ficam por fora da autenticação de propósito: um pico de 401
+    # é o que se quer ver, e não dá para vê-lo se a requisição morre antes de
+    # ser contada.
+    it 'counts a rejected request too' do
+      post '/search'
+      scrape
+
+      expect(last_response.body).to include(%(status="401"))
+    end
+
+    it 'writes one structured log line per request' do
+      get '/health'
+
+      expect(JSON.parse(logs.string.lines.first)).to include('path' => '/health', 'status' => 200)
+    end
+
+    it 'answers with the request id, so a log line can be found from a ticket' do
+      get '/health'
+
+      expect(last_response.headers['x-request-id']).not_to be_empty
+    end
   end
 
   it 'uses the collection given in the environment' do

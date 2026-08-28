@@ -57,6 +57,12 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `AnswerEvaluator` | Sustentação no contexto (alucinação) e relevância de resposta e de contexto, com juiz injetável |
 | `EvaluationLog` | Média corrente das notas e a lista das respostas que pontuaram pior |
 | `EvaluatedRag` | Decorador que pontua toda resposta assim que ela sai e alimenta o log |
+| `MetricRegistry` | Contadores, medidores e histogramas, com rótulo declarado e sob mutex |
+| `PrometheusExposition` | Escreve o registro no formato de texto que o Prometheus raspa |
+| `ProcessCollector` | Memória residente, CPU, threads e uptime, amostrados no momento do scrape |
+| `Api::Instrumentation` | Middleware que conta e cronometra requisições, com a rota normalizada |
+| `Api::MetricsEndpoint` | Serve `GET /metrics`, dentro do controle de acesso |
+| `Api::RequestLogger` | Uma linha JSON por requisição, sem corpo e sem credencial |
 
 ### Injeção de dependência
 
@@ -194,6 +200,7 @@ mundo é a API, que exige chave.
 | Rota | Escopo | O que faz |
 | --- | --- | --- |
 | `GET /health` | público | Verificação de saúde, não toca no Qdrant |
+| `GET /metrics` | `metrics` | Métricas no formato de texto do Prometheus |
 | `POST /documents` | `write` | Ingere um documento (`content`, `source`, `format`, `metadata`) |
 | `POST /search` | `read` | Busca trechos (`query`, `limit`, `filter`) |
 | `POST /ask` | `read` | Pergunta com RAG (`question`, `filter`) |
@@ -233,8 +240,8 @@ porque sem Qdrant na rede não há o que buscar. Para exercitar de verdade, é o
 ### Controle de acesso
 
 Autenticação por chave de API no header `Authorization: Bearer <chave>`, com autorização por escopo:
-`read` consulta, `write` ingere. As chaves são configuradas em `AIAD_API_KEYS`, no formato
-`nome:chave:escopos`, separadas por `;`.
+`read` consulta, `write` ingere, `metrics` raspa o `/metrics`. As chaves são configuradas em
+`AIAD_API_KEYS`, no formato `nome:chave:escopos`, separadas por `;`.
 
 ```bash
 ruby -rsecurerandom -e 'puts SecureRandom.hex(32)'   # gere cada chave assim
@@ -253,6 +260,59 @@ Decisões que valem registrar:
 
 O que **não** está implementado e um deploy real precisaria: rate limiting por chave, rotação/revogação de
 chaves sem restart, TLS (hoje o TLS terminaria num proxy na frente) e auditoria de acesso.
+
+### Métricas e log estruturado
+
+A API expõe `GET /metrics` no formato de texto do Prometheus e escreve **uma linha JSON por requisição**
+na saída padrão.
+
+```bash
+curl -H 'Authorization: Bearer SUA-CHAVE-DE-METRICAS' http://127.0.0.1:9292/metrics
+```
+
+| Métrica | Tipo | O que responde |
+| --- | --- | --- |
+| `aiad_http_requests_total` | contador | Throughput e taxa de erro, por método, rota e status |
+| `aiad_http_request_duration_seconds` | histograma | Latência — o percentil se escolhe na hora de consultar |
+| `aiad_http_requests_in_flight` | medidor | Quantas requisições estão sendo atendidas agora |
+| `aiad_http_exceptions_total` | contador | Requisições que morreram sem devolver status |
+| `aiad_process_resident_memory_bytes` | medidor | Memória residente |
+| `aiad_process_cpu_seconds_total` | contador | CPU acumulada |
+| `aiad_process_threads` | medidor | Threads vivas (o Puma atende com cinco) |
+| `aiad_process_uptime_seconds` | medidor | Tempo desde a subida |
+
+Decisões que valem registrar:
+
+- **`/metrics` tem escopo próprio, e não é público.** Rota, latência e status juntos são o mapa de como a
+  aplicação é usada. Escopo separado de `read` porque o Prometheus não precisa ler documento nenhum, e
+  quem lê documento não precisa ver a operação por dentro — menor privilégio nas duas direções.
+- **A rota do rótulo é normalizada; o caminho cru nunca entra.** Um varredor pedindo mil caminhos
+  inventados criaria mil séries temporais permanentes. Normalizado, ele cria uma, chamada `outra`.
+  Cardinalidade de rótulo é a forma mais comum de derrubar um Prometheus, e vem de fora.
+- **Histograma, não média.** Dez respostas de 1 s e uma de 30 s dão uma média tranquila e um usuário
+  irritado. Com buckets, o p95 e o p99 se calculam na consulta.
+- **Métrica e log ficam por fora da autenticação; o `/metrics`, por dentro.** Assim `401` e `403` entram
+  na contagem — um pico deles é chave rotacionada sem avisar, ou alguém adivinhando credencial —, e a
+  rota de métricas passa pelo mesmo controle de acesso que as outras.
+- **Métrica sem rótulo nasce em zero.** "Zero" e "sem dados" se investigam de formas diferentes; só a
+  série com rótulo não dá para inventar antes da primeira amostra.
+- **Memória ausente é melhor que memória zerada.** Sem `/proc` para ler, a métrica não é declarada:
+  publicar zero mostraria um processo leve e saudável exatamente onde não se sabe nada.
+
+O log é uma linha JSON por requisição, com `ts`, `request_id`, `method`, `path`, `route`, `status`,
+`duration_ms` e `principal` — pronto para Loki ou `jq`, sem regex. **Nunca** entram o corpo (que em
+`/documents` é um documento inteiro e em `/ask` é a pergunta do usuário) nem a credencial: da chave vai só
+o *nome* do principal. O `x-request-id` volta na resposta, e um id vindo do cliente é sanitizado antes de
+ser escrito — uma quebra de linha nesse header viraria uma segunda linha de log inteiramente forjada.
+
+Um `403` nomeia quem foi recusado: a credencial era válida, e "quem tentou o quê" é a pergunta que se faz
+depois. Por isso a `Authentication` põe o principal no env **antes** de checar o escopo — o que não abre
+nada, porque num `403` a requisição não chega na aplicação.
+
+Ainda não estão aqui: a stack Prometheus + Grafana + Loki no compose e o dashboard executivo, que são os
+itens 4 a 6 da [#4](https://github.com/Hirley/AIAD/issues/4). As métricas de LLM (tokens, custo, notas de
+avaliação) também ainda não saem pelo `/metrics` — hoje vivem no `SessionMetrics` e no `EvaluationLog`, e
+juntá-las ao painel é o último item.
 
 ### Modelo de linguagem
 
