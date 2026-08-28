@@ -83,16 +83,13 @@ RSpec.describe ReactAgent do
       expect(result[:steps].first[:arguments]).to eq(termo: 'férias')
     end
 
-# Modelo cerca JSON com crase por hábito de chat.
-it 'reads a JSON input wrapped in a code fence' do
-  fenced = "Ação: buscar
-Entrada: ```json
-{\"termo\": \"férias\"}
-```"
-  result = agent_for(fenced, 'Resposta Final: ok').run('?')
+    # Modelo cerca JSON com crase por hábito de chat.
+    it 'reads a JSON input wrapped in a code fence' do
+      fenced = "Ação: buscar\nEntrada: ```json\n{\"termo\": \"férias\"}\n```"
+      result = agent_for(fenced, 'Resposta Final: ok').run('?')
 
-  expect(result[:steps].first[:arguments]).to eq(termo: 'férias')
-end
+      expect(result[:steps].first[:arguments]).to eq(termo: 'férias')
+    end
 
     # Modelo escreve texto solto o tempo todo. Com um único parâmetro não há
     # ambiguidade sobre onde ele vai, então aceitar é melhor do que reclamar.
@@ -112,7 +109,7 @@ end
 
     it 'calls a no-argument tool with no arguments' do
       clock = Tool.new(name: 'relogio', description: 'Informa a hora.') { 'meio-dia' }
-      agent = described_class.new(llm: ScriptedLlm.new("Ação: relogio", 'Resposta Final: ok'),
+      agent = described_class.new(llm: ScriptedLlm.new('Ação: relogio', 'Resposta Final: ok'),
                                   tools: ToolRegistry.new([clock]))
 
       expect(agent.run('?')[:steps].first[:observation]).to eq('meio-dia')
@@ -122,7 +119,7 @@ end
   describe 'when things go wrong' do
     it 'turns a tool failure into an observation and keeps going' do
       broken = Tool.new(name: 'quebrada', description: 'Falha.') { raise 'sem conexão' }
-      agent = described_class.new(llm: ScriptedLlm.new("Ação: quebrada", 'Resposta Final: não consegui consultar.'),
+      agent = described_class.new(llm: ScriptedLlm.new('Ação: quebrada', 'Resposta Final: não consegui consultar.'),
                                   tools: ToolRegistry.new([broken]))
 
       expect(agent.run('?')[:answer]).to eq('não consegui consultar.')
