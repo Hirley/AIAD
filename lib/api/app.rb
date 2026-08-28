@@ -6,6 +6,7 @@ require_relative '../content_cleaner'
 require_relative '../document_ingestor'
 require_relative '../etl_pipeline'
 require_relative '../rag_pipeline'
+require_relative 'json_content_type'
 
 module Api
   # API HTTP do assistente: ingestão de documentos, busca e pergunta com RAG.
@@ -118,7 +119,7 @@ module Api
     end
 
     def json(status, body)
-      [status, { 'content-type' => 'application/json' }, [JSON.generate(body)]]
+      [status, { 'content-type' => JSON_CONTENT_TYPE }, [JSON.generate(body)]]
     end
   end
 end

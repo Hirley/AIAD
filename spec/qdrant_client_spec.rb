@@ -72,9 +72,18 @@ RSpec.describe QdrantClient do
       expect(transport.requests.last).to eq(
         method: :post,
         path: '/collections/documentos/points/search',
-        body: { vector: [0.1, 0.2], limit: 5 }
+        body: { vector: [0.1, 0.2], limit: 5, with_payload: true }
       )
       expect(result).to eq([{ id: 1, score: 0.9 }])
+    end
+
+    # O padrão do Qdrant é não devolver o payload. Sem pedir, a busca traz id e
+    # score sem texto nenhum, e o documento indexado some da resposta como se
+    # não existisse — que é o pior tipo de falha: silenciosa e plausível.
+    it 'asks for the payload, which is where the text and the source live' do
+      client.search('documentos', vector: [0.1])
+
+      expect(transport.requests.last[:body][:with_payload]).to be(true)
     end
 
     it 'defaults limit to 10' do

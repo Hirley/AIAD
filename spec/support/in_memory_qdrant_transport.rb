@@ -74,7 +74,19 @@ class InMemoryQdrantTransport
     OK
   end
 
+  # O payload só volta quando é pedido, como no Qdrant de verdade: lá o padrão
+  # de `with_payload` é **falso**. Este fake devolvia o payload sempre, e por
+  # isso escondeu por meses um bug real — a busca vetorial trazia id e score
+  # sem texto nenhum, e o RAG respondia "não encontrei" para documento que
+  # estava indexado. Fake mais permissivo que o serviço real é fake que
+  # esconde defeito.
   def search(name, body)
+    hits = ranked(name, body)
+
+    body[:with_payload] ? hits : hits.map { |hit| hit.except(:payload) }
+  end
+
+  def ranked(name, body)
     select(name, body[:filter])
       .map { |point| point.merge(score: EmbeddingGenerator.cosine_similarity(body[:vector], point[:vector])) }
       .sort_by { |point| -point[:score] }

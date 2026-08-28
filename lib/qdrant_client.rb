@@ -43,8 +43,14 @@ class QdrantClient
 
   # `params` aceita os ajustes de busca do Qdrant, por exemplo
   # `{ hnsw_ef: 128, exact: false, quantization: { rescore: true } }`.
+  #
+  # `with_payload` vai sempre ligado: no Qdrant o padrão é **falso**, e sem ele
+  # a busca devolve só id e score. Para este acervo o payload é o ponto — é
+  # dele que saem o texto e a origem que fundamentam a resposta. Sem pedir,
+  # todo documento indexado some da resposta como se não existisse.
   def search(collection, vector:, limit: 10, filter: nil, params: nil)
-    body = merge_present({ vector: vector, limit: limit }, filter: filter, params: presence(params))
+    body = merge_present({ vector: vector, limit: limit, with_payload: true },
+                         filter: filter, params: presence(params))
     response = post("#{collection_path(collection)}/points/search", body)
     response[:result] || []
   end
