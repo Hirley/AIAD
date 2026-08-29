@@ -279,6 +279,7 @@ mundo é a API, que exige chave.
 
 | Rota | Escopo | O que faz |
 | --- | --- | --- |
+| `GET /` | público | Console web: ingerir, buscar e perguntar pelo navegador |
 | `GET /health` | público | Verificação de saúde, não toca no Qdrant |
 | `GET /metrics` | `metrics` | Métricas no formato de texto do Prometheus |
 | `POST /documents` | `write` | Ingere um documento (`content`, `source`, `format`, `metadata`) |
@@ -302,6 +303,35 @@ curl -X POST http://127.0.0.1:9292/ask \
   -H 'Authorization: Bearer SUA-CHAVE' -H 'Content-Type: application/json' \
   -d '{"question":"quantos dias de férias por ano"}'
 ```
+
+### Console web
+
+`http://127.0.0.1:9292/` abre uma página com as três operações do dia a dia — ingerir, buscar e
+perguntar — sem montar requisição na mão. A resposta vem com as origens citadas, os trechos recuperados e
+o score de cada um, que é o que deixa ver a recuperação funcionando (ou não).
+
+Três decisões, todas com uma alternativa que parecia mais fácil:
+
+- **Servida pela própria API, mesma origem.** Não é preferência estética: não há CORS em lugar nenhum, e
+  uma página servida de outro lugar não conseguiria falar com esta API — o header `Authorization` dispara
+  preflight. Liberar `Access-Control-Allow-Origin` resolveria, e seria afrouxar a API para ganhar
+  conveniência de desenvolvimento.
+- **A página não carrega chave nenhuma.** Ela pede a chave a quem abriu e guarda em `sessionStorage`, que
+  some quando a aba fecha. Embutir a chave no HTML servido publicaria, para quem abrisse a porta 9292, a
+  credencial que a porta existe para exigir. Um cenário Cucumber cobra isso: o corpo da resposta não pode
+  conter nenhuma das chaves configuradas.
+- **Pública por declaração, não por posição na pilha.** O `Api::Console` fica **dentro** da autenticação,
+  e é o `AccessPolicy` que diz que `GET /` é público, do mesmo jeito que diz do `/health`. Pô-lo por fora
+  do middleware também funcionaria — e furaria a regra da casa, que é rota nova nascer protegida e só
+  ficar pública se alguém escrever isso onde se procura por essa informação.
+
+A página é HTML solto, fora do alcance do Rubocop e do RSpec. Duas specs a seguram: os formatos do menu
+de ingestão têm de bater com `ContentCleaner::FORMATS`, e toda rota que ela chama tem de existir no
+`AccessPolicy` — um `/aks` no lugar de `/ask` passa por qualquer revisão e só aparece em uso.
+
+O escopo da chave decide o que a página faz: `read` pergunta e busca, `write` também ingere. Com a chave
+errada a API responde `esta chave não tem o escopo write`, e o console mostra essa frase em vez de
+traduzir o status para uma mensagem genérica.
 
 ### A imagem
 

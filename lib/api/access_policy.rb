@@ -12,6 +12,10 @@ module Api
 
     RULES = {
       ['GET', '/health'] => PUBLIC,
+      # O console é a página que pede a chave; exigir chave para carregá-la
+      # seria pedir que o navegador já tivesse o que ele vai lá buscar. O HTML
+      # servido não carrega credencial nenhuma — quem digita é quem tem.
+      ['GET', '/'] => PUBLIC,
       # /metrics tem escopo próprio, e não `read`: quem consulta documentos não
       # precisa ver latência, rota e status da operação, e o Prometheus não
       # precisa ler documento nenhum para raspar métrica. Menor privilégio nas

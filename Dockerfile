@@ -49,6 +49,10 @@ COPY --from=build /usr/local/bundle /usr/local/bundle
 COPY --chown=aiad:aiad Gemfile Gemfile.lock config.ru ./
 COPY --chown=aiad:aiad config ./config
 COPY --chown=aiad:aiad lib ./lib
+# A página do console. O `Api::Console` a lê no boot, então esquecer esta linha
+# derruba a partida com o caminho do arquivo que falta, em vez de servir 404 na
+# primeira visita — quando ninguém mais está lendo o log de partida.
+COPY --chown=aiad:aiad public ./public
 
 USER aiad
 
