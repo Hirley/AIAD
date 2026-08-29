@@ -76,6 +76,48 @@ RSpec.describe RagPipeline do
       end
     end
 
+    # O recuperador devolve o top-k por construção, por pior que seja o melhor.
+    # Sem piso, "o menos ruim" era tratado como "o certo" e a API respondia
+    # sobre férias uma pergunta de plano odontológico, citando a origem.
+    context 'quando nada recuperado tem a ver com a pergunta' do
+      subject(:rag) do
+        described_class.new(retriever: retriever, llm: llm, collection: 'documentos',
+                            relevance_floor: RelevanceFloor.new)
+      end
+
+      it 'refuses instead of answering with the least bad passage' do
+        expect(rag.answer('qual o prazo do aviso prévio')[:answer]).to eq(described_class::NO_CONTEXT_ANSWER)
+      end
+
+      it 'does not spend a model call on it' do
+        rag.answer('qual o prazo do aviso prévio')
+
+        expect(llm.prompts).to be_empty
+      end
+
+      # Recusar citando origem seria pior do que responder errado: daria ao
+      # "não encontrei" a aparência de estar apoiado em documento.
+      it 'cites nothing' do
+        expect(rag.answer('qual o prazo do aviso prévio')[:sources]).to be_empty
+      end
+
+      it 'still answers the question the corpus does cover' do
+        expect(rag.answer('quantos dias de férias')[:answer]).to eq('Trinta dias por ano [1].')
+      end
+
+      # O piso corta trecho a trecho, não tudo ou nada: o que sobra é contexto
+      # menor e mais limpo, não contexto nenhum.
+      it 'drops only the passages that do not belong' do
+        expect(rag.answer('quantos dias de férias')[:sources]).to eq(['politica.txt'])
+      end
+    end
+
+    # Sem piso configurado o comportamento é o de antes, porque desligar
+    # observabilidade e salvaguarda tem de continuar possível.
+    it 'answers with whatever came back when there is no floor' do
+      expect(rag.answer('qual o prazo do aviso prévio')[:sources]).not_to be_empty
+    end
+
     it 'ignores hits without text in the payload' do
       partial = FakeRetriever.new(results: [{ id: 1, payload: { source: 'vazio.txt' } }] + hits)
       result = described_class.new(retriever: partial, llm: llm, collection: 'documentos').answer('Pergunta')

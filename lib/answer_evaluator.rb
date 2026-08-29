@@ -26,24 +26,15 @@ require_relative 'tokenizer'
 #   exato que a métrica existe para pegar. (Quem decide não avaliar a resposta
 #   de "não encontrei" é quem chama, que sabe se o modelo chegou a ser usado.)
 # - **Palavra funcional não sustenta nada.** "de", "para", "com" aparecem em
-#   qualquer trecho e dariam sustentação a qualquer invenção.
+#   qualquer trecho e dariam sustentação a qualquer invenção. A lista mora no
+#   `Tokenizer`, junto com o resto do que define o que é um termo, porque o
+#   `RelevanceFloor` depende dela pelo mesmo motivo — e duas listas divergiriam.
 # - **A lista das frases reprovadas sai junto.** O número diz que piorou; a
 #   lista diz o que ler.
 class AnswerEvaluator
   SUPPORT_THRESHOLD = 0.6
   SENTENCE = /(?<=[.!?])\s+/
 
-  # Lista curta de propósito: só as palavras funcionais mais comuns do
-  # português. Lista grande começa a derrubar termo que importa.
-  #
-  # As interrogativas estão aqui por um motivo específico: "quantos", "quando",
-  # "qual" nunca aparecem na resposta, e sem tirá-las da conta toda resposta
-  # boa perderia pontos por não repetir a palavra da pergunta.
-  STOPWORDS = %w[
-    a ao aos as às com como da das de do dos e em entre me na nas no nos num numa o os ou para pela pelas
-    pelo pelos por que se sem ser sob sobre um uma umas uns é são foi era está estão têm tem
-    onde qual quais quando quanta quantas quanto quantos quem quê
-  ].freeze
   def initialize(judge: nil, threshold: SUPPORT_THRESHOLD)
     @judge = judge
     @threshold = threshold
@@ -93,7 +84,7 @@ class AnswerEvaluator
   end
 
   def content_terms(text)
-    (Tokenizer.tokens(text) - STOPWORDS).uniq
+    Tokenizer.meaningful(text).uniq
   end
 
   # Fragmento sem letra nenhuma não é afirmação, e por isso não entra na conta.

@@ -21,6 +21,7 @@ require_relative '../prompt_compressor'
 require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
 require_relative '../react_agent'
+require_relative '../relevance_floor'
 require_relative '../reranker'
 require_relative '../retrieval_tool'
 require_relative '../semantic_cache'
@@ -85,6 +86,12 @@ module Api
   # sem chamada extra ao modelo. Desligados por padrão: HyDE, que gasta uma
   # chamada a mais por pergunta, e documento pai, que muda bastante o tamanho
   # do contexto.
+  #
+  # O piso de relevância também nasce ligado, e por um motivo mais forte: sem
+  # ele a API responde pergunta que nenhum documento cobre, citando origem,
+  # como se soubesse. Responder errado com confiança é pior do que recusar, e
+  # esse não é o padrão que se deixa para quem esquecer de configurar.
+  # `AIAD_RELEVANCE_FLOOR=0` desliga.
   def self.retrieval_options(env = ENV)
     {
       rerank: flag(env, 'AIAD_RERANK', default: true),
@@ -92,9 +99,20 @@ module Api
       hyde: flag(env, 'AIAD_HYDE', default: false),
       parent_documents: flag(env, 'AIAD_PARENT_DOCUMENTS', default: false),
       evaluate: flag(env, 'AIAD_EVALUATE', default: true),
-      context_budget: Integer(env.fetch('AIAD_CONTEXT_BUDGET', DEFAULT_CONTEXT_BUDGET))
+      context_budget: Integer(env.fetch('AIAD_CONTEXT_BUDGET', DEFAULT_CONTEXT_BUDGET)),
+      relevance_floor: Float(env.fetch('AIAD_RELEVANCE_FLOOR', RelevanceFloor::DEFAULT_MINIMUM))
     }
   end
+
+  # Zero desliga: o piso deixa de ser montado em vez de ser montado inofensivo.
+  # Quem lê o objeto depois consegue ver que não há salvaguarda ali, em vez de
+  # ter de reparar que o valor dela é neutro.
+  def self.relevance_floor_for(options)
+    minimum = options[:relevance_floor]
+
+    RelevanceFloor.new(minimum: minimum) if minimum.positive?
+  end
+  private_class_method :relevance_floor_for
 
   def self.flag(env, name, default:)
     value = env[name]
@@ -124,7 +142,7 @@ module Api
       retriever: retriever, llm: llm, collection: collection, top_k: DEFAULT_TOP_K,
       reranker: (Reranker.new if options[:rerank]),
       compressor: PromptCompressor.new, context_budget: options[:context_budget],
-      tracer: tracer
+      tracer: tracer, relevance_floor: relevance_floor_for(options)
     )
     rag = EvaluatedRag.new(rag: rag, log: PrometheusEvaluationLog.new(registry: registry)) if options[:evaluate]
 
