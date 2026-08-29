@@ -474,7 +474,7 @@ resposta:
 | `aiad_llm_latency_seconds` | histograma | Duração das chamadas ao modelo |
 | `aiad_llm_groundedness` | histograma | Fração das frases sustentadas pelo contexto |
 | `aiad_llm_answer_relevancy` | histograma | Quanto a resposta trata da pergunta feita |
-| `aiad_llm_context_relevancy` | histograma | Quanto do contexto recuperado serve |
+| `aiad_llm_context_relevancy` | histograma | Sobreposição média entre a pergunta e os trechos recuperados |
 | `aiad_llm_unsupported_sentences_total` | contador | Afirmações sem apoio que saíram para o usuário |
 
 Decisões que valem registrar:
@@ -501,6 +501,32 @@ Decisões que valem registrar:
 Diferente do `SessionMetrics`, que guarda uma entrada por chamada e por sessão em memória, este caminho
 tem memória fixa: um punhado de séries, não importa quantas perguntas cheguem. Quem guarda série temporal
 é o Prometheus.
+
+### O que as notas de qualidade não medem
+
+As três notas saem de uma única medida: sobreposição de radicais entre dois textos. É barata, roda em
+toda resposta sem rede e sem custo, e tem dois limites que já custaram caro uma vez. Ambos estão fixados
+em spec — respectivamente em `spec/evaluation_independence_spec.rb` e no bloco
+`the known limit of lexical grounding` de `spec/answer_evaluator_spec.rb`.
+
+**A relevância de contexto não é independente do piso.** O `RelevanceFloor` decide o que entra no
+contexto usando essa mesma sobreposição, e por um tempo a nota apenas confirmava a decisão dele: a versão
+antiga contava os trechos com sobreposição *maior que zero*, e o piso só deixa passar trecho a partir de
+0,45. O resultado era uma nota presa em 1,0 — cinco amostras na stack, cinco vezes 1,0; dezesseis mil
+perguntas geradas, um único valor. Hoje a nota é a **média** da sobreposição, então piso mal calibrado
+mantendo trecho a 0,45 aparece como 0,45 no painel. O parentesco entre as duas contas continua existindo;
+o que se recuperou foi a capacidade de a nota dizer algo que o piso não disse.
+
+**A sustentação não distingue paráfrase de alucinação.** Ela mede se a frase reaproveita o vocabulário do
+trecho, não se a afirmação se apoia nele. Medido contra o acervo deste projeto, uma paráfrase correta
+tirou 0,11 e uma alucinação pura tirou 0,17: as faixas **se sobrepõem**, e por isso mexer no
+`SUPPORT_THRESHOLD` não resolve — afrouxar o corte aprova a alucinação antes de aprovar a paráfrase.
+
+Hoje isso não dói porque o `ExtractiveLlm`, que é o padrão, recorta o trecho em vez de reescrevê-lo: a
+resposta é substring literal do contexto e a nota é 1,0 por construção. **Vai doer ao plugar um modelo que
+parafraseia**, e o sintoma será a sustentação desabando ao acusar de alucinação resposta correta. Quando
+chegar essa hora, a saída é o `judge:` do `AnswerEvaluator` — cross-encoder ou LLM-as-judge —, não um
+limiar novo.
 
 ### A stack de observabilidade
 
