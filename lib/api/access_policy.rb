@@ -19,7 +19,10 @@ module Api
       ['GET', '/metrics'] => :metrics,
       ['POST', '/documents'] => :write,
       ['POST', '/search'] => :read,
-      ['POST', '/ask'] => :read
+      ['POST', '/ask'] => :read,
+      # O agente lê o mesmo acervo que o `/ask`, só que decidindo sozinho o que
+      # buscar. Nada além de leitura: ele não ingere nem apaga documento.
+      ['POST', '/agent'] => :read
     }.freeze
 
     def self.scope_for(method, path)

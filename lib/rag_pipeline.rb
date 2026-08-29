@@ -33,10 +33,19 @@ class RagPipeline
   end
 
   def answer(question, filter: nil)
-    @tracer.trace('rag.answer', input: question) { |span| answer_within(span, question, filter) }
+    @tracer.trace('rag.answer', input: question, metadata: model_metadata) do |span|
+      answer_within(span, question, filter)
+    end
   end
 
   private
+
+  # O nome do modelo vai no trace para que tokens e custo saiam rotulados por
+  # modelo, e não num balde "desconhecido". Modelo que não se identifica não
+  # quebra nada: fica sem rótulo, como sempre foi.
+  def model_metadata
+    @llm.respond_to?(:model) ? { model: @llm.model } : {}
+  end
 
   def answer_within(span, question, filter)
     passages = compress(span.span('rag.retrieve') { retrieve(question, filter: filter) })

@@ -49,6 +49,18 @@ jobs:
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/health)" = "200"
 
+      # O CI roda sem ANTHROPIC_API_KEY de propósito: nenhuma chave de modelo
+      # entra aqui. O que se verifica é a degradação — a rota existe, exige
+      # credencial e diz o que falta em vez de dar seis voltas no laço.
+      - name: A rota do agente degrada explicando o que configurar
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/agent)" = "401"
+          resposta=$(curl -s -X POST http://127.0.0.1:9292/agent \
+            -H 'Authorization: Bearer chave-de-ci-leitura' -H 'Content-Type: application/json' \
+            -d '{"question":"quantos dias de férias"}')
+          echo "$resposta"
+          echo "$resposta" | grep -q 'ANTHROPIC_API_KEY'
+
       - name: Rota protegida recusa quem não tem chave
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/search)" = "401"

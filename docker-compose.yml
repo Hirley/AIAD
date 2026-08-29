@@ -25,6 +25,10 @@ services:
       AIAD_API_KEYS: ${AIAD_API_KEYS:?defina AIAD_API_KEYS no .env antes de subir}
       AIAD_COLLECTION: ${AIAD_COLLECTION:-documentos}
       AIAD_TOP_K: ${AIAD_TOP_K:-4}
+      # Opcionais: sem a chave, o /ask responde de forma extrativa e o /agent
+      # devolve 503 dizendo o que configurar. Vazio conta como ausente.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AIAD_MODEL: ${AIAD_MODEL:-}
     ports:
       - "127.0.0.1:9292:9292"
 
