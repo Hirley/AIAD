@@ -190,6 +190,51 @@ RSpec.describe QdrantClient do
     end
   end
 
+  describe '#scroll' do
+    let(:pagina) do
+      { ok: true, result: { points: [{ id: 1, payload: { text: 'férias' } }], next_page_offset: 2 } }
+    end
+
+    it 'asks for the payload, which is the whole point of walking the collection' do
+      client.scroll('documentos')
+
+      expect(transport.requests.last[:body][:with_payload]).to be(true)
+    end
+
+    # Trazer o vetor de cada ponto multiplica o tráfego por nada: quem varre o
+    # acervo para reconstruir o índice léxico quer o texto.
+    it 'leaves the vector out by default' do
+      client.scroll('documentos')
+
+      expect(transport.requests.last[:body][:with_vector]).to be(false)
+    end
+
+    it 'omits the offset on the first page instead of sending nil' do
+      client.scroll('documentos')
+
+      expect(transport.requests.last[:body]).not_to have_key(:offset)
+    end
+
+    it 'sends the offset when continuing' do
+      client.scroll('documentos', offset: 7)
+
+      expect(transport.requests.last[:body][:offset]).to eq(7)
+    end
+
+    it 'gives back the points and where to continue' do
+      transport = FakeQdrantTransport.new(responses: { '/collections/documentos/points/scroll' => pagina })
+
+      expect(described_class.new(transport: transport).scroll('documentos'))
+        .to eq(points: [{ id: 1, payload: { text: 'férias' } }], next: 2)
+    end
+
+    # `next` nulo é a condição de parada de quem chama; devolver `[]` numa
+    # coleção vazia evita que o laço tenha de saber que `result` pode faltar.
+    it 'gives back no points and no continuation for an empty result' do
+      expect(client.scroll('documentos')).to eq(points: [], next: nil)
+    end
+  end
+
   describe '#count_points' do
     it 'returns the count reported by Qdrant' do
       transport = FakeQdrantTransport.new(

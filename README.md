@@ -126,6 +126,31 @@ nenhuma outra mudança. A fusão é por Reciprocal Rank Fusion (`1/(k + posiçã
 escalas incomparáveis — similaridade de cosseno e score BM25 — e premia o que os dois braços concordam
 em trazer para o topo. Cada resultado informa em `matched_by` qual braço o encontrou.
 
+#### O índice léxico se reconstrói sozinho na partida
+
+O `Bm25Index` vive em memória, então até há pouco todo restart da API apagava metade da busca híbrida. O
+sintoma era o pior possível: a API subia saudável, respondia 200, e passava a buscar **só pelo vetor** —
+com um embedder de hash no lugar de um modelo, isso é boa parte da qualidade indo embora sem nenhum
+sinal. A única volta era reingerir os documentos na mão.
+
+O texto de cada trecho já estava no payload do Qdrant desde a ingestão; ninguém o lia na partida. Agora o
+`LexicalIndexLoader` varre a coleção página a página e reenche o índice, e o `Api::LexicalIndexWarmup`
+decide o que fazer quando isso não dá certo:
+
+- **Qdrant fora do ar não derruba a API.** Mesma inversão do exportador de trace e do avaliador — quem
+  aquece não derruba quem faz, e as rotas já sabem responder 503 quando a busca falha.
+- **Mas a degradação não é silenciosa.** O medidor `aiad_lexical_index_documents` publica o tamanho do
+  índice. Quem tem documento indexado e mede zero ali está buscando com um braço só.
+
+Reconstruir, e não persistir em disco: o acervo é a fonte, e um segundo lugar guardando a mesma verdade
+divergiria no primeiro documento apagado direto no Qdrant.
+
+O que isto **não** resolve: o índice continua sendo uma cópia por processo. Com `workers 0` no Puma, que
+é a configuração atual, há um processo só. Num deploy com vários workers cada um carregaria a sua —
+iguais depois do boot, divergindo a cada ingestão, porque só o worker que atendeu o `POST /documents`
+indexa o trecho novo. Para valer ali, o braço BM25 precisaria de um índice compartilhado ou dos vetores
+esparsos do próprio Qdrant.
+
 ### RAG avançado
 
 | Recurso | Classe | Padrão na API |
@@ -456,6 +481,7 @@ curl -H 'Authorization: Bearer SUA-CHAVE-DE-METRICAS' http://127.0.0.1:9292/metr
 | `aiad_process_resident_memory_bytes` | medidor | Memória residente |
 | `aiad_process_cpu_seconds_total` | contador | CPU acumulada |
 | `aiad_process_threads` | medidor | Threads vivas (o Puma atende com cinco) |
+| `aiad_lexical_index_documents` | medidor | Trechos no índice BM25 — zero com acervo cheio é busca pela metade |
 | `aiad_process_uptime_seconds` | medidor | Tempo desde a subida |
 
 Decisões que valem registrar:

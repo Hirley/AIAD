@@ -39,6 +39,30 @@ RSpec.describe 'Api.build' do
     expect(last_response.headers['content-type']).to include('text/html')
   end
 
+  # A partida não pode depender de o acervo estar de pé, e a métrica em zero é
+  # o sinal de que o índice não carregou — o que separa "acervo vazio" de
+  # "degradei para só o braço vetorial".
+  describe 'aquecimento do índice léxico' do
+    # Porta fechada, e não o `qdrant:6333` do grupo de fora. O contêiner da
+    # suíte está na mesma rede do compose, então com a stack local no ar este
+    # exemplo alcançava o Qdrant **de verdade** e media quantos documentos
+    # estivessem lá — passava na máquina de quem tinha três, e mediria outra
+    # coisa no CI. Teste cujo resultado depende do que está rodando ao lado não
+    # é teste.
+    let(:environment) { super().merge('QDRANT_URL' => 'http://127.0.0.1:1') }
+
+    it 'builds even with Qdrant unreachable' do
+      expect(app).to respond_to(:call)
+    end
+
+    it 'publishes the index size so the degradation is visible' do
+      registry = Api::Observability.registry
+      Api.build(env: environment, registry: registry, logs: logs)
+
+      expect(registry.render).to include('aiad_lexical_index_documents 0')
+    end
+  end
+
   it 'protects the other routes with the configured keys' do
     post '/search'
 

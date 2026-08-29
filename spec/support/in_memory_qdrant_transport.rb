@@ -15,6 +15,7 @@ class InMemoryQdrantTransport
   SEARCH = %r{\A/collections/([^/]+)/points/search\z}
   COUNT = %r{\A/collections/([^/]+)/points/count\z}
   DELETE_POINTS = %r{\A/collections/([^/]+)/points/delete\z}
+  SCROLL = %r{\A/collections/([^/]+)/points/scroll\z}
   EXISTS = %r{\A/collections/([^/]+)/exists\z}
 
   OK = { ok: true }.freeze
@@ -35,6 +36,7 @@ class InMemoryQdrantTransport
     case path
     when SEARCH then { ok: true, result: search(Regexp.last_match(1), body) }
     when COUNT then { ok: true, result: { count: select(Regexp.last_match(1), body[:filter]).size } }
+    when SCROLL then { ok: true, result: scroll(Regexp.last_match(1), body) }
     when DELETE_POINTS then delete_points(Regexp.last_match(1), body[:points])
     else OK
     end
@@ -72,6 +74,29 @@ class InMemoryQdrantTransport
   def delete_points(name, ids)
     ids.each { |id| @collections.fetch(name, {}).delete(id) }
     OK
+  end
+
+  # Pagina de verdade, e não devolve tudo de uma vez. Um fake que entregasse a
+  # coleção inteira numa página esconderia o laço de quem chama — o defeito só
+  # apareceria no acervo grande, que é onde ninguém está olhando. Mesmo motivo
+  # do `with_payload` logo abaixo.
+  #
+  # `next_page_offset` é o id do próximo ponto, como no Qdrant, e vem nulo na
+  # última página.
+  def scroll(name, body)
+    ids = @collections.fetch(name, {}).keys.sort_by(&:to_s)
+    ids = ids.drop_while { |id| id != body[:offset] } if body[:offset]
+
+    pagina = ids.first(body.fetch(:limit, 10))
+    seguinte = ids[pagina.size]
+
+    { points: pagina.map { |id| point_for(name, id, body[:with_payload]) }, next_page_offset: seguinte }
+  end
+
+  def point_for(name, id, with_payload)
+    point = @collections.fetch(name).fetch(id)
+
+    with_payload ? { id: id, payload: point[:payload] } : { id: id }
   end
 
   # O payload só volta quando é pedido, como no Qdrant de verdade: lá o padrão

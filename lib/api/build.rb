@@ -2,23 +2,15 @@
 
 require_relative '../anthropic_llm'
 require_relative '../api_key_store'
-require_relative '../bm25_index'
 require_relative '../cached_rag'
 require_relative '../conversation_memory'
 require_relative '../conversation_store'
 require_relative '../conversational_agent'
-require_relative '../embedding_generator'
-require_relative '../etl_pipeline'
 require_relative '../evaluated_rag'
 require_relative '../extractive_llm'
-require_relative '../http_qdrant_transport'
-require_relative '../hybrid_retriever'
-require_relative '../hyde_retriever'
-require_relative '../parent_document_retriever'
 require_relative '../prometheus_evaluation_log'
 require_relative '../prometheus_trace_exporter'
 require_relative '../prompt_compressor'
-require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
 require_relative '../react_agent'
 require_relative '../relevance_floor'
@@ -30,8 +22,10 @@ require_relative '../tracer'
 require_relative 'app'
 require_relative 'authentication'
 require_relative 'console'
+require_relative 'lexical_index_warmup'
 require_relative 'metrics_endpoint'
 require_relative 'observability'
+require_relative 'retrieval'
 
 module Api
   DEFAULT_COLLECTION = 'documentos'
@@ -44,10 +38,8 @@ module Api
   # Monta a stack completa a partir do ambiente: transporte HTTP para o Qdrant,
   # ETL, busca híbrida, RAG e o middleware de controle de acesso por fora.
   #
-  # Atenção ao índice léxico: ele é em memória e por processo. Isso basta para
-  # rodar e para desenvolvimento, mas num deploy com vários workers cada um teria
-  # o seu — o braço BM25 precisaria de um índice compartilhado (ou dos vetores
-  # esparsos do próprio Qdrant) para valer em produção.
+  # O índice léxico vive em memória e é reconstruído do acervo na partida; o
+  # que isso resolve, e o que continua em aberto, está no `LexicalIndexWarmup`.
   def self.build(env: ENV, registry: Observability.registry, logs: $stdout)
     app = Console.new(MetricsEndpoint.new(application_for(env, registry), registry: registry))
 
@@ -61,27 +53,15 @@ module Api
     collection = collection_for(env)
     options = retrieval_options(env)
     llm = llm_for(env)
-    etl, retriever = retrieval_for(env, llm, options)
+    retrieval = Retrieval.build(env: env, llm: llm, options: options, collection: collection, registry: registry)
     tracer = Observability.tracer(registry: registry, env: env)
 
-    App.new(etl: etl, collection: collection,
-            rag: rag_pipeline(retriever: retriever, llm: llm, collection: collection, options: options,
+    App.new(etl: retrieval[:etl], collection: collection,
+            rag: rag_pipeline(retriever: retrieval[:retriever], llm: llm, collection: collection, options: options,
                               registry: registry, tracer: tracer),
-            agent: agent_for(retriever: retriever, collection: collection, tracer: tracer, env: env))
+            agent: agent_for(retriever: retrieval[:retriever], collection: collection, tracer: tracer, env: env))
   end
   private_class_method :application_for
-
-  # O ETL e o recuperador saem juntos porque nascem juntos: os dois índices que
-  # a busca híbrida usa são alimentados por uma única ingestão, e separá-los
-  # aqui só criaria a chance de montar um sem o outro.
-  def self.retrieval_for(env, llm, options)
-    lexical_index = Bm25Index.new
-    parent_store = ParentStore.new
-    etl = etl_pipeline(env, lexical_index, parent_store)
-
-    [etl, retriever_for(etl, lexical_index, parent_store, llm, options)]
-  end
-  private_class_method :retrieval_for
 
   # Ligados por padrão: re-ranking e cache semântico, que melhoram a resposta
   # sem chamada extra ao modelo. Desligados por padrão: HyDE, que gasta uma
@@ -122,16 +102,6 @@ module Api
     TRUE_VALUES.include?(value.to_s.strip.downcase)
   end
   private_class_method :flag
-
-  # A busca híbrida é a base; documento pai e HyDE, quando ligados, envolvem o
-  # recuperador por fora, cada um mantendo a mesma interface de busca.
-  def self.retriever_for(etl, lexical_index, parent_store, llm, options)
-    retriever = HybridRetriever.new(vector_retriever: etl, lexical_index: lexical_index)
-    retriever = ParentDocumentRetriever.new(retriever: retriever, store: parent_store) if options[:parent_documents]
-
-    options[:hyde] ? HydeRetriever.new(retriever: retriever, llm: llm) : retriever
-  end
-  private_class_method :retriever_for
 
   # A ordem dos decoradores importa. A avaliação fica **por dentro** do cache:
   # resposta servida do cache já foi avaliada quando entrou, e pontuá-la de novo
@@ -182,16 +152,6 @@ module Api
     )
   end
   private_class_method :memory_for
-
-  def self.etl_pipeline(env, lexical_index, parent_store)
-    EtlPipeline.new(
-      qdrant: QdrantClient.new(transport: HttpQdrantTransport.from_env(env)),
-      embedder: EmbeddingGenerator.new,
-      lexical_index: lexical_index,
-      parent_store: parent_store
-    )
-  end
-  private_class_method :etl_pipeline
 
   def self.collection_for(env = ENV)
     value = env['AIAD_COLLECTION'].to_s.strip
