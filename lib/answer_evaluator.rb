@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'tokenizer'
+require_relative 'stemmer'
 
 # Avaliação de qualidade da resposta: o quanto ela se sustenta no contexto
 # recuperado (alucinação) e o quanto ela e o contexto têm a ver com a pergunta
@@ -84,7 +84,7 @@ class AnswerEvaluator
   end
 
   def content_terms(text)
-    Tokenizer.meaningful(text).uniq
+    Stemmer.meaningful_stems(text).uniq
   end
 
   # Fragmento sem letra nenhuma não é afirmação, e por isso não entra na conta.

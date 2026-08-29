@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'tokenizer'
+require_relative 'stemmer'
 
 # Re-ranking: reordena os candidatos que a recuperação trouxe, olhando o texto
 # inteiro de cada trecho em vez de só a distância entre vetores.
@@ -36,10 +36,10 @@ class Reranker
   end
 
   def coverage(query, text)
-    terms = Tokenizer.tokens(query).uniq
+    terms = Stemmer.stems(query).uniq
     return 0.0 if terms.empty? || text.empty?
 
-    present = Tokenizer.tokens(text).to_set
+    present = Stemmer.stems(text).to_set
 
     terms.count { |term| present.include?(term) }.fdiv(terms.size)
   end

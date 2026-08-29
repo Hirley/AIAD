@@ -67,6 +67,7 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::Observability` | Monta o registro de métricas e envolve a aplicação com log e instrumentação |
 | `PrometheusTraceExporter` | Publica tokens, custo e latência de modelo no registro, span a span |
 | `PrometheusEvaluationLog` | Publica as notas de avaliação no registro, sem levar o texto junto |
+| `Stemmer` | Reduz a palavra ao radical em português, para "trabalhar" casar com "trabalho" |
 | `RelevanceFloor` | Descarta o trecho que não tem a ver com a pergunta, para o assistente recusar em vez de errar com convicção |
 | `LangfuseExporter` | Manda o trace para o Langfuse: autenticação, timeout e tratamento de erro |
 | `LangfuseBatch` | Traduz o trace para os eventos da ingestão — a única parte não verificada contra o serviço real |
@@ -214,18 +215,49 @@ Decisões que valem registrar:
   limiar que as separasse. Tirando as funcionais, as respondíveis ficaram em 0,50–1,00 e as sem resposta
   em 0,00–0,33. A lista mora no `Tokenizer`, junto com o `AnswerEvaluator` que depende dela pelo mesmo
   motivo: duas listas divergiriam, e a divergência apareceria como nota que não bate com recusa.
-- **0,45 é ponto de partida, não verdade.** Foi calibrado em onze perguntas contra três documentos, o
-  que não calibra uma constante. O número a observar é a taxa de recusa: subindo sem motivo, o piso está
-  alto; pergunta sem resposta sendo respondida, está baixo.
+- **0,45 é onde o erro custa menos, não a fronteira entre certo e errado.** Em catorze perguntas contra
+  três documentos as respondíveis ficaram em 0,20–1,00 e as sem resposta em 0,00–0,33: **as faixas se
+  sobrepõem**. Com onze perguntas parecia haver um vão limpo; duas perguntas a mais desfizeram a
+  impressão. O número a observar é a taxa de recusa: subindo sem motivo, o piso está alto; pergunta sem
+  resposta sendo respondida, está baixo.
 - **Recusar não suja o painel de qualidade.** O `EvaluatedRag` já ignorava resposta sem contexto, então
   a recusa entra nesse caminho de graça — e a média de qualidade não desaba justamente quando o sistema
   passa a se comportar melhor.
 
-**Limitação conhecida:** não há stemming. "quantos dias por semana posso trabalhar de casa" é recusada
-mesmo com a política de trabalho remoto no acervo, porque a pergunta diz "trabalh**ar**" e o documento
-diz "trabalh**o**". Reformulada para "quantos dias de trabalho remoto por semana", responde. O piso troca
-uma resposta errada por uma recusa, o que é melhor — mas o ideal seria a resposta certa, e o que impede
-é a morfologia, não o piso.
+**Limitação conhecida:** a cobertura é léxica, e uma pergunta pode ser respondida por um documento com
+que ela quase não compartilha palavra. "posso pedir adiantamento antes de viajar" é respondível pela
+política de reembolso e tira 0,20, porque só "adiantamento" aparece lá — a pergunta diz "viajar", o
+documento diz "viagem". Isso fica **abaixo** de perguntas que o acervo não cobre, então nenhum valor de
+piso resolve o caso. Resolveria um scorer que entendesse sinônimo e paráfrase — um cross-encoder ou um
+LLM-as-judge —, e a injeção já está pronta para isso: `RelevanceFloor.new(scorer: ...)`.
+
+### Stemming
+
+O piso e o BM25 casam **radical**, não palavra. Antes disso, "quantos dias por semana posso trabalhar de
+casa" era recusada mesmo com a política de trabalho remoto no acervo, porque a pergunta dizia
+"trabalh**ar**" e o documento "trabalh**o**". Com o `Stemmer`, essa pergunta passou de 0,40 apontando
+para o documento **errado** a 0,60 apontando para o **certo**.
+
+**É um subconjunto reduzido do RSLP, não o RSLP inteiro.** O algoritmo original tem oito passos, algumas
+centenas de regras e listas de exceção que só se acertam consultando a publicação; escrever isso de
+memória seria escrever errado com aparência de certo — e stemmer errado não falha, ele conflacia em
+silêncio e estraga o ranking. O que está aqui cobre plural, advérbio, as formas verbais comuns e a vogal
+final. Trocar por uma implementação completa mexe num lugar só: quem chama depende de `Stemmer.stem`.
+
+Decisões que valem registrar:
+
+- **Não entra no caminho dos embeddings.** O `EmbeddingGenerator` projeta cada termo por hash, então
+  stemizar ali mudaria todo vetor já gravado no Qdrant e exigiria reingestão do acervo. E há um motivo
+  mais forte: o embedder de hash é substituto de um modelo de verdade, e modelo de verdade trata
+  morfologia sozinho — receber texto pré-stemizado o deixaria pior. Já o índice BM25 é em memória e por
+  processo, então mudar a tokenização dele não pede migração de nada.
+- **`-am` e `-em` ficaram de fora das regras de verbo.** São terminações de terceira pessoa do plural,
+  mas também o fim de muito substantivo comum — "viagem", "ordem", "imagem", "homem". Com a regra
+  ligada, "viagem" virava "viag" e casava com qualquer verbo de mesmo radical. O RSLP resolve com lista
+  de exceção; sem a lista, o certo é abrir mão da regra. O preço é "podem" não casar com "pode", e
+  "viajar" não casar com "viagem" — que é justamente a limitação da seção anterior.
+- **Piso de tamanho em toda regra.** Sem ele o stemmer come palavra curta inteira: "ar" viraria string
+  vazia e casaria com tudo.
 
 ## Setup
 
