@@ -77,6 +77,45 @@ RSpec.describe Tracer do
     end
   end
 
+  # Duração se mede com relógio monotônico; posição na linha do tempo, não. Um
+  # exportador que só recebe duração não consegue dizer *quando* cada span
+  # aconteceu, e desenha uma cascata alinhada à direita que mente sobre a
+  # ordem. As duas leituras convivem: a monotônica mede, a de parede situa.
+  describe 'placing the work on a timeline' do
+    let(:wall) { Time.utc(2026, 8, 29, 12, 0, 0) }
+
+    subject(:tracer) do
+      described_class.new(exporter: exporter, clock: clock, ids: -> { 'id-fixo' }, now: -> { wall })
+    end
+
+    it 'stamps when the trace started' do
+      tracer.trace('pergunta') { 'resposta' }
+
+      expect(exporter.last[:started_at]).to eq(wall)
+    end
+
+    it 'stamps each nested span too' do
+      tracer.trace('pergunta') { |span| span.span('recuperar') { 'trechos' } }
+
+      expect(exporter.last[:spans].first[:started_at]).to eq(wall)
+    end
+
+    # O relógio de parede é lido uma vez por span, no começo. Ler de novo no
+    # fim para calcular duração é o erro que o relógio monotônico existe para
+    # evitar: um ajuste de NTP no meio produziria duração negativa.
+    it 'still measures duration with the monotonic clock' do
+      tracer.trace('pergunta') { 'resposta' }
+
+      expect(exporter.last[:duration]).to eq(1.0)
+    end
+
+    it 'defaults to real time when nobody injects a clock' do
+      described_class.new(exporter: exporter).trace('pergunta') { 'resposta' }
+
+      expect(exporter.last[:started_at]).to be_within(60).of(Time.now.utc)
+    end
+  end
+
   describe 'nesting' do
     it 'keeps a nested span inside the trace' do
       tracer.trace('pergunta') { |span| span.span('recuperar') { 'trechos' } }

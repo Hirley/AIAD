@@ -31,6 +31,12 @@ services:
       AIAD_MODEL: ${AIAD_MODEL:-}
       AIAD_HISTORY_BUDGET: ${AIAD_HISTORY_BUDGET:-400}
       AIAD_MAX_SESSIONS: ${AIAD_MAX_SESSIONS:-500}
+      # Rastreamento no Langfuse, também opcional: sem o par de chaves o trace
+      # vai só para o Prometheus e a API sobe igual. Observabilidade externa
+      # não é requisito de boot.
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_URL: ${LANGFUSE_URL:-}
     ports:
       - "127.0.0.1:9292:9292"
 

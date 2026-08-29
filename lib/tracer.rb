@@ -11,8 +11,14 @@ require 'securerandom'
 # - **O valor de retorno não muda.** `trace` devolve o que o bloco devolveu.
 #   Tracer que mexe no retorno obriga a reescrever o código em volta, e aí não
 #   se instrumenta nada.
-# - **Relógio monotônico.** Hora de parede dá salto (NTP, horário de verão) e
-#   produz duração negativa. Aqui o que importa é intervalo, não data.
+# - **Dois relógios, cada um no que sabe fazer.** A duração sai do monotônico:
+#   hora de parede dá salto (NTP, horário de verão) e produz duração negativa.
+#   Mas relógio monotônico não diz *quando* algo aconteceu — o valor dele só
+#   tem sentido comparado consigo mesmo. Então cada span também carimba a hora
+#   de parede no início, uma vez, e é ela que situa o span numa linha do tempo
+#   compartilhada com o resto do mundo. Quem exporta precisa das duas: sem a
+#   segunda, uma cascata de spans só pode ser desenhada alinhada à direita, o
+#   que inverte a leitura de quem foi primeiro.
 # - **Erro é registrado e re-levantado.** Observabilidade que engole falha
 #   troca um problema por dois.
 # - **A exportação acontece só quando a raiz fecha.** Trace parcial não explica
@@ -22,6 +28,7 @@ require 'securerandom'
 #   ninguém aceita cair porque o observador caiu.
 class Tracer
   MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+  WALL_CLOCK = -> { Time.now.utc }
   RANDOM_ID = -> { SecureRandom.hex(8) }
 
   # Tracer desligado: cumpre a mesma interface e não guarda nada. Existe para
@@ -43,16 +50,18 @@ class Tracer
 
   def self.null = Null
 
-  def initialize(exporter: nil, clock: MONOTONIC, ids: RANDOM_ID)
+  def initialize(exporter: nil, clock: MONOTONIC, ids: RANDOM_ID, now: WALL_CLOCK)
     @exporter = exporter
     @clock = clock
     @ids = ids
+    @now = now
   end
 
   # A exportação vai num `ensure`: trace de requisição que falhou é justamente
   # o que se vai olhar depois, então não pode ser o único que se perde.
   def trace(name, input: nil, metadata: {}, &block)
-    span = Span.new(name: name, input: input, metadata: metadata, id: @ids.call, clock: @clock, ids: @ids)
+    span = Span.new(name: name, input: input, metadata: metadata, id: @ids.call,
+                    clock: @clock, ids: @ids, now: @now)
 
     span.run(&block)
   ensure
@@ -74,11 +83,12 @@ class Tracer
     attr_accessor :output, :usage
     attr_reader :metadata
 
-    def initialize(name:, id:, clock:, ids:, input: nil, metadata: {})
+    def initialize(name:, id:, clock:, ids:, now:, input: nil, metadata: {})
       @name = name
       @id = id
       @clock = clock
       @ids = ids
+      @now = now
       @input = input
       @metadata = metadata
       @spans = []
@@ -86,7 +96,8 @@ class Tracer
     end
 
     def span(name, input: nil, metadata: {}, &block)
-      child = self.class.new(name: name, input: input, metadata: metadata, id: @ids.call, clock: @clock, ids: @ids)
+      child = self.class.new(name: name, input: input, metadata: metadata, id: @ids.call,
+                             clock: @clock, ids: @ids, now: @now)
       @spans << child
 
       child.run(&block)
@@ -100,6 +111,7 @@ class Tracer
     # span instrumentado seria ruído, porque é isso na esmagadora maioria dos
     # casos. Definir explicitamente continua ganhando.
     def run
+      @started_at = @now.call
       started = @clock.call
       result = yield(self)
       @output = result if @output.nil?
@@ -114,7 +126,8 @@ class Tracer
 
     def to_h
       { id: @id, name: @name, input: @input, output: @output, metadata: @metadata, usage: @usage,
-        status: @status, error: @error, duration: @duration, spans: @spans.map(&:to_h) }
+        status: @status, error: @error, started_at: @started_at, duration: @duration,
+        spans: @spans.map(&:to_h) }
     end
 
     protected

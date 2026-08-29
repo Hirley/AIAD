@@ -67,6 +67,9 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::Observability` | Monta o registro de métricas e envolve a aplicação com log e instrumentação |
 | `PrometheusTraceExporter` | Publica tokens, custo e latência de modelo no registro, span a span |
 | `PrometheusEvaluationLog` | Publica as notas de avaliação no registro, sem levar o texto junto |
+| `LangfuseExporter` | Manda o trace para o Langfuse: autenticação, timeout e tratamento de erro |
+| `LangfuseBatch` | Traduz o trace para os eventos da ingestão — a única parte não verificada contra o serviço real |
+| `CompositeExporter` | Entrega o mesmo trace a vários destinos, sem que a queda de um corte os outros |
 
 ### Injeção de dependência
 
@@ -458,6 +461,47 @@ Decisões que valem registrar:
 - **No Loki a disciplina de cardinalidade é a mesma.** Viram rótulo só `container`, `level` e `route`. O
   resto do JSON continua na linha, pesquisável, sem virar índice.
 - **Só o Grafana publica porta.** Prometheus e Loki ficam na rede interna do compose, como o Qdrant.
+
+### Rastreamento no Langfuse
+
+O Prometheus responde *que* o custo subiu ontem às 3h. Ele não responde *por quê* — para isso é preciso a
+requisição individual: qual pergunta chegou, qual prompt foi montado, o que o modelo devolveu, qual span
+demorou. É o que vai para o Langfuse.
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-...
+LANGFUSE_SECRET_KEY=sk-...
+LANGFUSE_URL=https://cloud.langfuse.com   # ou a URL da sua instância
+```
+
+Sem o par de chaves o exportador não é montado, o trace vai só para o Prometheus e a API sobe igual:
+observabilidade externa é opcional, não requisito de boot.
+
+> **O formato do payload nunca foi verificado contra uma instância real.** Tudo o que o `LangfuseBatch`
+> monta — nomes de campo, tipos de evento, a forma do lote — é o meu melhor entendimento da API de
+> ingestão, escrito sem um servidor para confirmar. O Qdrant roda em container neste projeto e a API da
+> Anthropic é exercitada de verdade quando há chave; o Langfuse, não. É por isso que a tradução mora
+> numa classe separada do transporte: se o formato estiver errado, o conserto é em
+> `lib/langfuse_batch.rb` e em nenhum outro lugar.
+
+Decisões que valem registrar:
+
+- **O trace é o contêiner, não uma observação.** A raiz vira as duas coisas. Sem a segunda, a duração da
+  raiz não existiria em lugar nenhum e a cascata começaria no primeiro filho, como se o trabalho de fora
+  fosse instantâneo.
+- **Span com `usage` é geração; o resto é span.** É essa distinção que faz token e custo aparecerem no
+  painel do Langfuse. O critério é o mesmo do `PrometheusTraceExporter` — duas definições de "isto foi
+  uma chamada de modelo" divergiriam na primeira mudança, e aí os dois painéis contariam números
+  diferentes para o mesmo dia.
+- **Dois relógios, cada um no que sabe fazer.** O `Tracer` mede duração com relógio monotônico, que não
+  anda para trás, e carimba o início com hora de parede uma vez só. O fim se calcula somando os dois. Ler
+  o relógio de parede de novo no fim reintroduziria o salto de NTP que o monotônico existe para evitar —
+  e sem o carimbo de parede não há como situar o span numa linha do tempo, porque valor monotônico só
+  significa alguma coisa comparado consigo mesmo.
+- **A queda do Langfuse não leva junto a métrica.** O `CompositeExporter` isola cada destino: um serviço
+  externo fora do ar não pode apagar o número que se usa justamente para perceber isso. E a falha não
+  some — ela sobe depois que todos foram servidos, e é o `Tracer` que decide não derrubar a requisição do
+  usuário por causa do observador.
 
 ### Modelo de linguagem
 
