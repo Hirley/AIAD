@@ -56,6 +56,7 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `SessionMetrics` | Latência, custo e tokens por sessão, com média, máximo e p95 |
 | `MetricsExporter` | Liga o tracer ao `SessionMetrics`: o que já é instrumentado vira medição |
 | `AnswerEvaluator` | Sustentação no contexto (alucinação) e relevância de resposta e de contexto, com juiz injetável |
+| `LlmJudge` | Juiz de sustentação por modelo, injetável no `AnswerEvaluator`; entende sinônimo e paráfrase |
 | `EvaluationLog` | Média corrente das notas e a lista das respostas que pontuaram pior |
 | `EvaluatedRag` | Decorador que pontua toda resposta assim que ela sai e alimenta o log |
 | `MetricRegistry` | Contadores, medidores e histogramas, com rótulo declarado e sob mutex |
@@ -590,10 +591,16 @@ tirou 0,11 e uma alucinação pura tirou 0,17: as faixas **se sobrepõem**, e po
 `SUPPORT_THRESHOLD` não resolve — afrouxar o corte aprova a alucinação antes de aprovar a paráfrase.
 
 Hoje isso não dói porque o `ExtractiveLlm`, que é o padrão, recorta o trecho em vez de reescrevê-lo: a
-resposta é substring literal do contexto e a nota é 1,0 por construção. **Vai doer ao plugar um modelo que
-parafraseia**, e o sintoma será a sustentação desabando ao acusar de alucinação resposta correta. Quando
-chegar essa hora, a saída é o `judge:` do `AnswerEvaluator` — cross-encoder ou LLM-as-judge —, não um
-limiar novo.
+resposta é substring literal do contexto e a nota é 1,0 por construção. **Dói ao plugar um modelo que
+parafraseia**, e o sintoma é a sustentação desabando ao acusar de alucinação resposta correta.
+
+A saída é o `judge:` do `AnswerEvaluator`, não um limiar novo, e já existe uma implementação pronta para
+injetar: `LlmJudge` (`lib/llm_judge.rb`), que pergunta ao modelo se a afirmação se sustenta no contexto em
+vez de medir vocabulário reaproveitado. `AIAD_ANSWER_JUDGE=llm` liga, e exige `ANTHROPIC_API_KEY` — sem
+ela, a variável é ignorada e a heurística continua. **Não é o padrão**, de propósito: o `judge:` é chamado
+uma vez por frase da resposta, não uma vez por resposta inteira, e isso não sobrevive ao primeiro pico de
+tráfego. A heurística barata continua sendo o que roda em toda resposta sem custo; `LlmJudge` é para quem
+aceita pagar por nota confiável em troca de menos throughput.
 
 ### A stack de observabilidade
 
