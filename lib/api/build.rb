@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative '../answer_evaluator'
 require_relative '../anthropic_llm'
 require_relative '../api_key_store'
 require_relative '../cached_rag'
@@ -8,6 +9,7 @@ require_relative '../conversation_store'
 require_relative '../conversational_agent'
 require_relative '../evaluated_rag'
 require_relative '../extractive_llm'
+require_relative '../llm_judge'
 require_relative '../prometheus_evaluation_log'
 require_relative '../prometheus_trace_exporter'
 require_relative '../prompt_compressor'
@@ -58,7 +60,7 @@ module Api
 
     App.new(etl: retrieval[:etl], collection: collection,
             rag: rag_pipeline(retriever: retrieval[:retriever], llm: llm, collection: collection, options: options,
-                              registry: registry, tracer: tracer),
+                              registry: registry, tracer: tracer, evaluator: answer_evaluator_for(env)),
             agent: agent_for(retriever: retrieval[:retriever], collection: collection, tracer: tracer, env: env))
   end
   private_class_method :application_for
@@ -108,14 +110,16 @@ module Api
   # gastaria CPU para chegar na mesma nota e contaria a mesma resposta duas
   # vezes no histograma — inflando a média com repetição em vez de medir
   # respostas novas.
-  def self.rag_pipeline(retriever:, llm:, collection:, options:, registry:, tracer:)
+  def self.rag_pipeline(retriever:, llm:, collection:, options:, registry:, tracer:, evaluator:)
     rag = RagPipeline.new(
       retriever: retriever, llm: llm, collection: collection, top_k: DEFAULT_TOP_K,
       reranker: (Reranker.new if options[:rerank]),
       compressor: PromptCompressor.new, context_budget: options[:context_budget],
       tracer: tracer, relevance_floor: relevance_floor_for(options)
     )
-    rag = EvaluatedRag.new(rag: rag, log: PrometheusEvaluationLog.new(registry: registry)) if options[:evaluate]
+    if options[:evaluate]
+      rag = EvaluatedRag.new(rag: rag, evaluator: evaluator, log: PrometheusEvaluationLog.new(registry: registry))
+    end
 
     options[:cache] ? CachedRag.new(rag: rag) : rag
   end
@@ -167,4 +171,19 @@ module Api
     AnthropicLlm.from_env(env) || ExtractiveLlm.new
   end
   private_class_method :llm_for
+
+  # A heurística léxica continua sendo o padrão — ver a decisão no cabeçalho do
+  # `AnswerEvaluator`. `AIAD_ANSWER_JUDGE=llm` liga o `LlmJudge`, mas só quando
+  # há modelo de verdade: sem `ANTHROPIC_API_KEY`, cai de volta na heurística
+  # em vez de montar um juiz que nunca teria o que chamar. Mesma degradação
+  # graciosa do `agent_for` — avaliação é apoio, nunca pode bloquear a resposta.
+  def self.answer_evaluator_for(env)
+    return AnswerEvaluator.new unless env['AIAD_ANSWER_JUDGE'].to_s.strip == 'llm'
+
+    model = AnthropicLlm.from_env(env)
+    return AnswerEvaluator.new if model.nil?
+
+    AnswerEvaluator.new(judge: LlmJudge.new(llm: model))
+  end
+  private_class_method :answer_evaluator_for
 end

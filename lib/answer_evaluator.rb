@@ -49,7 +49,11 @@ require_relative 'stemmer'
 #   resolve. Hoje não dói, porque o `ExtractiveLlm` recorta o trecho em vez de
 #   reescrevê-lo e a resposta é substring literal do contexto. Dói no dia em
 #   que entrar um modelo que parafraseia, e o sintoma será a nota desabando ao
-#   acusar de alucinação resposta correta. A saída é o `judge:`, não o limiar.
+#   acusar de alucinação resposta correta. A saída é o `judge:`, não o limiar —
+#   e o `LlmJudge` é essa saída, pronto para injetar. Continua fora do padrão:
+#   ele chama o modelo uma vez por **frase**, não por resposta, e isso não
+#   sobrevive ao primeiro pico de tráfego. Ver a decisão em
+#   `Api.answer_evaluator_for`.
 class AnswerEvaluator
   SUPPORT_THRESHOLD = 0.6
   SENTENCE = /(?<=[.!?])\s+/
