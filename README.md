@@ -48,7 +48,7 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `SpecialistTool` | Embrulha um agente inteiro como ferramenta, para o time tratar especialista e ferramenta igual |
 | `StateGraph` | Grafo de estado: nós que transformam o estado e arestas (fixas ou condicionais) que decidem o próximo |
 | `AgentCrew` | Time multi-agente sobre o grafo: rotear → executar → revisar, com a revisão devolvendo o trabalho |
-| `ConversationStore` | Guarda a conversa em memória, uma lista de turnos por id |
+| `ConversationStore` | Guarda a conversa em memória, com teto de sessões e descarte da menos usada |
 | `FileConversationStore` | Mesmo contrato, em disco: o histórico sobrevive ao processo |
 | `ConversationMemory` | Turnos da conversa e o pedaço do histórico que cabe no orçamento de tokens |
 | `ConversationalAgent` | Dá memória a qualquer agente: histórico junto da pergunta nova, resposta registrada |
@@ -64,6 +64,7 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::Instrumentation` | Middleware que conta e cronometra requisições, com a rota normalizada |
 | `Api::MetricsEndpoint` | Serve `GET /metrics`, dentro do controle de acesso |
 | `Api::RequestLogger` | Uma linha JSON por requisição, sem corpo e sem credencial |
+| `Api::Observability` | Monta o registro de métricas e envolve a aplicação com log e instrumentação |
 | `PrometheusTraceExporter` | Publica tokens, custo e latência de modelo no registro, span a span |
 | `PrometheusEvaluationLog` | Publica as notas de avaliação no registro, sem levar o texto junto |
 
@@ -286,6 +287,22 @@ Decisões que valem registrar:
 
 A memória da conversa é **por processo**, como o índice BM25, o `ParentStore` e o cache semântico: vale
 para um worker, e com mais de um a conversa dependeria de qual deles atendeu.
+
+Três tetos governam a conversa, e é fácil confundi-los:
+
+| Teto | Mede | Padrão | Variável |
+| --- | --- | --- | --- |
+| Orçamento de histórico | **Custo de cada pergunta** — o histórico inteiro vai no prompt toda vez | 400 tokens | `AIAD_HISTORY_BUDGET` |
+| Retenção de turnos | Memória de **uma** conversa | 100 turnos | — |
+| Teto de conversas | Memória **do processo** | 500 sessões | `AIAD_MAX_SESSIONS` |
+
+O orçamento é apertado e a retenção é folgada de propósito: o primeiro se paga em toda chamada, o segundo
+só ocupa RAM. Passado o teto de conversas, sai a **menos recentemente usada** — e ler conta como uso, para
+que uma conversa ativa não seja descartada como se estivesse parada.
+
+Sem o teto de conversas, uma rota que cria uma sessão nova a cada pergunta sem `session` encheria o Hash
+até o processo morrer. E o prompt continuaria correto o tempo todo, o que faria o problema não aparecer em
+lugar nenhum até ser tarde demais.
 
 O cliente do modelo é testado como o do Qdrant: transporte injetável, sem rede e sem credencial. A suíte
 inteira continua rodando offline — o que não dá para verificar aqui é a resposta do provedor real, e por
