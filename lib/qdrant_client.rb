@@ -55,6 +55,20 @@ class QdrantClient
     response[:result] || []
   end
 
+  # Percorre a coleção página a página, sem vetor de consulta. Serve para
+  # reconstruir o que é derivado dos pontos guardados — hoje, o índice léxico,
+  # que vive em memória e não sobrevive a um restart.
+  #
+  # O vetor fica de fora por padrão: quem varre o acervo quer o payload, e
+  # trazer o vetor de cada ponto multiplica o tráfego por nada. `next` vem nulo
+  # na última página, e é a condição de parada de quem chama.
+  def scroll(collection, limit: 100, offset: nil, with_vector: false)
+    body = merge_present({ limit: limit, with_payload: true, with_vector: with_vector }, offset: offset)
+    result = post("#{collection_path(collection)}/points/scroll", body)[:result] || {}
+
+    { points: result[:points] || [], next: result[:next_page_offset] }
+  end
+
   def count_points(collection, filter: nil)
     response = post("#{collection_path(collection)}/points/count", merge_present({}, filter: filter))
     response.dig(:result, :count)

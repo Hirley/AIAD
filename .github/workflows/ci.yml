@@ -130,6 +130,13 @@ jobs:
       # memória ainda tem o texto e a fusão RRF entrega a origem pelo braço
       # léxico. Reiniciada, a API depende só do Qdrant — e era aí que ela
       # respondia "não encontrei" para documento indexado.
+      # Este passo existia e passava, e por muito tempo foi cego para metade do
+      # que verificava: o Qdrant tem volume, então o braço **vetorial** da busca
+      # sobrevivia ao restart e respondia sozinho. O índice léxico, que vive na
+      # memória do processo, era apagado — e nada aqui notava.
+      #
+      # A checagem da métrica é o que enxerga isso. Zero com documento indexado
+      # significa busca híbrida rodando com um braço só.
       - name: O documento indexado sobrevive ao restart da API
         run: |
           docker compose restart api
@@ -140,6 +147,17 @@ jobs:
           echo "$resposta"
           echo "$resposta" | grep -q 'politica.txt'
           echo "$resposta" | grep -q 'trinta dias'
+
+      - name: O índice léxico se reconstrói do acervo depois do restart
+        run: |
+          curl -sf -H 'Authorization: Bearer chave-de-ci-metricas' \
+            http://127.0.0.1:9292/metrics > metricas.txt
+          grep 'aiad_lexical_index_documents' metricas.txt
+          trechos=$(grep -oP '^aiad_lexical_index_documents(\{[^}]*\})? \K[0-9.]+' metricas.txt)
+          echo "trechos no indice lexico: $trechos"
+          # Maior que zero: o documento ingerido antes do restart voltou para o
+          # indice sem ninguem reingerir nada.
+          test "$(printf '%.0f' "$trechos")" -gt 0
 
       # A inversão que vale para qualquer observador: ninguém aceita cair
       # porque quem estava olhando caiu. As chaves aqui são de mentira e a URL
