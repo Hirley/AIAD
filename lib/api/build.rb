@@ -14,9 +14,7 @@ require_relative '../extractive_llm'
 require_relative '../http_qdrant_transport'
 require_relative '../hybrid_retriever'
 require_relative '../hyde_retriever'
-require_relative '../metric_registry'
 require_relative '../parent_document_retriever'
-require_relative '../process_collector'
 require_relative '../prometheus_evaluation_log'
 require_relative '../prometheus_trace_exporter'
 require_relative '../prompt_compressor'
@@ -30,14 +28,15 @@ require_relative '../tool_registry'
 require_relative '../tracer'
 require_relative 'app'
 require_relative 'authentication'
-require_relative 'instrumentation'
 require_relative 'metrics_endpoint'
-require_relative 'request_logger'
+require_relative 'observability'
 
 module Api
   DEFAULT_COLLECTION = 'documentos'
   DEFAULT_TOP_K = 4
   DEFAULT_CONTEXT_BUDGET = 1500
+  DEFAULT_HISTORY_BUDGET = ConversationMemory::DEFAULT_BUDGET
+  DEFAULT_MAX_SESSIONS = ConversationStore::DEFAULT_MAX_SESSIONS
   TRUE_VALUES = %w[1 true yes on].freeze
 
   # Monta a stack completa a partir do ambiente: transporte HTTP para o Qdrant,
@@ -47,10 +46,10 @@ module Api
   # rodar e para desenvolvimento, mas num deploy com vários workers cada um teria
   # o seu — o braço BM25 precisaria de um índice compartilhado (ou dos vetores
   # esparsos do próprio Qdrant) para valer em produção.
-  def self.build(env: ENV, registry: instrumented_registry, logs: $stdout)
+  def self.build(env: ENV, registry: Observability.registry, logs: $stdout)
     app = MetricsEndpoint.new(application_for(env, registry), registry: registry)
 
-    observed(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry, logs)
+    Observability.wrap(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry: registry, logs: logs)
   end
 
   # A aplicação e os middlewares se montam separados de propósito: aqui é o que
@@ -79,30 +78,6 @@ module Api
     [etl, retriever_for(etl, lexical_index, parent_store, llm, options)]
   end
   private_class_method :retrieval_for
-
-  # A ordem da pilha não é acidental. Log e métrica ficam **por fora** da
-  # autenticação, para que 401 e 403 apareçam no gráfico e no log: um pico de
-  # 401 é chave rotacionada sem avisar ou alguém tentando adivinhar credencial,
-  # e não dá para ver isso se a requisição morre antes de ser contada. Já o
-  # `/metrics` fica **por dentro**, porque é uma rota como qualquer outra e
-  # precisa passar pelo mesmo controle de acesso.
-  def self.observed(app, registry, logs)
-    RequestLogger.new(Instrumentation.new(app, registry: registry), io: logs,
-                                                                    route: Instrumentation.method(:route_for))
-  end
-
-  # O registro nasce com as métricas já declaradas: métrica que só aparece
-  # depois da primeira requisição faz o painel dizer "sem dados" onde a verdade
-  # é "zero", e essas duas coisas se investigam de formas bem diferentes.
-  def self.instrumented_registry
-    registry = MetricRegistry.new
-    Instrumentation.install(registry)
-    ProcessCollector.new.install(registry)
-    PrometheusTraceExporter.install(registry)
-    PrometheusEvaluationLog.install(registry)
-
-    registry
-  end
 
   # Ligados por padrão: re-ranking e cache semântico, que melhoram a resposta
   # sem chamada extra ao modelo. Desligados por padrão: HyDE, que gasta uma
@@ -171,9 +146,22 @@ module Api
     tracer = Tracer.new(exporter: PrometheusTraceExporter.new(registry: registry))
 
     ConversationalAgent.new(agent: ReactAgent.new(llm: model, tools: tools, tracer: tracer),
-                            memory: ConversationMemory.new(store: ConversationStore.new))
+                            memory: memory_for(env))
   end
   private_class_method :agent_for
+
+  # Dois tetos, medindo coisas diferentes. O orçamento é sobre o **custo de
+  # cada pergunta**: o histórico inteiro vai no prompt toda vez. O número de
+  # sessões é sobre a **memória do processo**: sem teto, uma sessão nova por
+  # pergunta enche o Hash até o processo morrer, e o vazamento só apareceria
+  # semanas depois sem nada apontando para a causa.
+  def self.memory_for(env)
+    ConversationMemory.new(
+      store: ConversationStore.new(max_sessions: Integer(env.fetch('AIAD_MAX_SESSIONS', DEFAULT_MAX_SESSIONS))),
+      budget: Integer(env.fetch('AIAD_HISTORY_BUDGET', DEFAULT_HISTORY_BUDGET))
+    )
+  end
+  private_class_method :memory_for
 
   def self.etl_pipeline(env, lexical_index, parent_store)
     EtlPipeline.new(

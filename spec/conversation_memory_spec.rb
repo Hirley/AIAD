@@ -123,4 +123,45 @@ RSpec.describe ConversationMemory do
       expect(memory.transcript('sessao')).to eq('Assistente: trinta por ano.')
     end
   end
+
+  # Duas contas diferentes: o orçamento é sobre custo por chamada e é apertado;
+  # a retenção é sobre memória do processo e é folgada. Sem teto, uma conversa
+  # longa cresce para sempre — e o prompt continuaria certo o tempo todo, o que
+  # faz o problema não aparecer até o processo morrer.
+  describe 'retenção' do
+    subject(:memory) { described_class.new(retention: 3) }
+
+    def falar(numero)
+      memory.append('sessao', role: :user, content: "pergunta #{numero}")
+    end
+
+    it 'keeps only the configured number of turns' do
+      5.times { |i| falar(i) }
+
+      expect(memory.turns('sessao').size).to eq(3)
+    end
+
+    it 'keeps the most recent ones, because a conversation is read from the end' do
+      5.times { |i| falar(i) }
+
+      expect(memory.turns('sessao').map { |turn| turn[:content] })
+        .to eq(['pergunta 2', 'pergunta 3', 'pergunta 4'])
+    end
+
+    it 'does not touch a conversation that is under the ceiling' do
+      2.times { |i| falar(i) }
+
+      expect(memory.turns('sessao').size).to eq(2)
+    end
+
+    # A retenção não pode apertar o histórico mais do que o orçamento já
+    # aperta: quem manda no prompt continua sendo o orçamento.
+    it 'leaves the budget in charge of what reaches the prompt' do
+      memory = described_class.new(retention: 10, budget: 5)
+      memory.append('sessao', role: :user, content: 'quantos dias de férias?')
+      memory.append('sessao', role: :assistant, content: 'trinta por ano.')
+
+      expect(memory.transcript('sessao')).to eq('Assistente: trinta por ano.')
+    end
+  end
 end
