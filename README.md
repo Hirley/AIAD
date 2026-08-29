@@ -67,6 +67,7 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `Api::Observability` | Monta o registro de métricas e envolve a aplicação com log e instrumentação |
 | `PrometheusTraceExporter` | Publica tokens, custo e latência de modelo no registro, span a span |
 | `PrometheusEvaluationLog` | Publica as notas de avaliação no registro, sem levar o texto junto |
+| `RelevanceFloor` | Descarta o trecho que não tem a ver com a pergunta, para o assistente recusar em vez de errar com convicção |
 | `LangfuseExporter` | Manda o trace para o Langfuse: autenticação, timeout e tratamento de erro |
 | `LangfuseBatch` | Traduz o trace para os eventos da ingestão — a única parte não verificada contra o serviço real |
 | `CompositeExporter` | Entrega o mesmo trace a vários destinos, sem que a queda de um corte os outros |
@@ -185,6 +186,46 @@ qdrant.create_collection('documentos', vector_size: 384,
 qdrant.update_collection('documentos', hnsw: { ef_construct: 256 })       # tuning sem recriar a coleção
 qdrant.search('documentos', vector: vetor, params: { hnsw_ef: 128 })      # precisão x latência por consulta
 ```
+
+### Piso de relevância
+
+Um recuperador devolve o top-k **por construção**, por pior que seja o melhor. Sem um piso, o pipeline
+trata "o menos ruim" como "o certo": perguntado sobre um assunto que não está em documento nenhum, o
+assistente responde com o que estiver mais perto, citando a origem, com toda a convicção de uma resposta
+certa. Foi assim que o defeito apareceu — rodando a stack, não lendo o código.
+
+```ruby
+RagPipeline.new(retriever: retriever, llm: llm, collection: 'documentos',
+                relevance_floor: RelevanceFloor.new)          # AIAD_RELEVANCE_FLOOR ajusta; 0 desliga
+```
+
+Abaixo do piso o pipeline cai no caminho que já existia para "não recuperei nada": responde *"Não
+encontrei essa informação nos documentos indexados"*, não cita origem nenhuma e nem chama o modelo.
+
+Decisões que valem registrar:
+
+- **O piso não pode se apoiar no score da busca híbrida.** O RRF pontua por *posição* — `1/(k + posição)`
+  —, não por qualidade. Medido na stack real, `politica-ferias.txt` tirou `0.03278688524590164` tanto
+  para "quantos dias de férias por ano" quanto para "plano de saúde odontológico": o mesmo número até o
+  último dígito. Qualquer limiar sobre esse score seria um limiar sobre nada. Por isso o piso mede outra
+  coisa — quantos termos de conteúdo da pergunta aparecem no trecho.
+- **Palavra funcional não conta**, e foi o que fez o piso funcionar. Medindo com "qual", "a", "de" na
+  conta, pergunta respondível e pergunta sem resposta no acervo se sobrepunham em 0,50 e não havia
+  limiar que as separasse. Tirando as funcionais, as respondíveis ficaram em 0,50–1,00 e as sem resposta
+  em 0,00–0,33. A lista mora no `Tokenizer`, junto com o `AnswerEvaluator` que depende dela pelo mesmo
+  motivo: duas listas divergiriam, e a divergência apareceria como nota que não bate com recusa.
+- **0,45 é ponto de partida, não verdade.** Foi calibrado em onze perguntas contra três documentos, o
+  que não calibra uma constante. O número a observar é a taxa de recusa: subindo sem motivo, o piso está
+  alto; pergunta sem resposta sendo respondida, está baixo.
+- **Recusar não suja o painel de qualidade.** O `EvaluatedRag` já ignorava resposta sem contexto, então
+  a recusa entra nesse caminho de graça — e a média de qualidade não desaba justamente quando o sistema
+  passa a se comportar melhor.
+
+**Limitação conhecida:** não há stemming. "quantos dias por semana posso trabalhar de casa" é recusada
+mesmo com a política de trabalho remoto no acervo, porque a pergunta diz "trabalh**ar**" e o documento
+diz "trabalh**o**". Reformulada para "quantos dias de trabalho remoto por semana", responde. O piso troca
+uma resposta errada por uma recusa, o que é melhor — mas o ideal seria a resposta certa, e o que impede
+é a morfologia, não o piso.
 
 ## Setup
 
