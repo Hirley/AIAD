@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative 'tokenizer'
+require_relative 'stemmer'
 
 # Índice léxico BM25 em memória, usado no braço de busca por palavra-chave da
 # busca híbrida.
@@ -9,6 +9,13 @@ require_relative 'tokenizer'
 # termos comuns (IDF) e documentos longos (normalização por tamanho) — pega
 # exatamente o que o embedding costuma perder: nome de campo, código de erro,
 # sigla, número de contrato.
+#
+# Indexa e consulta por **radical**, não por palavra: quem pergunta "trabalhar"
+# tem de achar o documento que diz "trabalho". O índice é em memória e por
+# processo, então mudar a tokenização não pede migração de nada — ele se
+# reconstrói na ingestão. O mesmo não valeria para o braço vetorial, cujos
+# vetores estão gravados no Qdrant, e é por isso que o `EmbeddingGenerator`
+# continua projetando a palavra inteira.
 class Bm25Index
   # Nomes canônicos do BM25: saturation é o k1 e length_normalization é o b.
   SATURATION = 1.5
@@ -21,7 +28,7 @@ class Bm25Index
   end
 
   def add(id, text, payload: {})
-    tokens = Tokenizer.tokens(text)
+    tokens = Stemmer.stems(text)
     @documents[id] = { frequencies: tokens.tally, length: tokens.size, payload: payload }
     self
   end
@@ -31,7 +38,7 @@ class Bm25Index
   end
 
   def search(query, limit: 10)
-    terms = Tokenizer.tokens(query)
+    terms = Stemmer.stems(query)
 
     @documents.filter_map { |id, document| score_document(id, document, terms) }
               .sort_by { |hit| -hit[:score] }

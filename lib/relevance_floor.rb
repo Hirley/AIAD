@@ -2,7 +2,7 @@
 
 require 'set'
 
-require_relative 'tokenizer'
+require_relative 'stemmer'
 
 # Piso de relevância: descarta os trechos que não têm a ver com a pergunta.
 #
@@ -37,12 +37,22 @@ require_relative 'tokenizer'
 #   quebra não é avaliada — o `EvaluatedRag` ignora resposta sem contexto, então
 #   recusar não suja o histograma de qualidade.
 class RelevanceFloor
-  # Calibrado nas onze perguntas e três documentos com que o defeito foi
-  # encontrado: as respondíveis ficaram em 0,50–1,00 e as sem resposta em
-  # 0,00–0,33. **Onze perguntas não calibram uma constante** — isto é ponto de
-  # partida, não verdade. O número a observar em produção é a taxa de recusa:
-  # subindo sem motivo, o piso está alto; pergunta sem resposta sendo
-  # respondida, está baixo.
+  # Calibrado, recalibrado depois do stemming, e o resultado da segunda vez
+  # vale mais do que o número: **as faixas se sobrepõem**.
+  #
+  # Em catorze perguntas contra três documentos, as respondíveis ficaram em
+  # 0,20–1,00 e as sem resposta em 0,00–0,33. Na primeira medição, com onze
+  # perguntas, parecia haver um vão limpo entre 0,33 e 0,50 — duas perguntas a
+  # mais desfizeram essa impressão. "posso pedir adiantamento antes de viajar"
+  # é respondível e tira 0,20, abaixo de duas perguntas que o acervo não
+  # cobre. **Nenhum valor separa esses dois casos**, porque só um dos quatro
+  # termos de conteúdo da pergunta aparece no documento; é limite da cobertura
+  # léxica, não do limiar.
+  #
+  # 0,45 acerta treze das catorze e é o que fica. Não é a fronteira entre certo
+  # e errado — é onde o erro custa menos. O número a observar em produção é a
+  # taxa de recusa: subindo sem motivo, o piso está alto; pergunta sem resposta
+  # sendo respondida, está baixo.
   DEFAULT_MINIMUM = 0.45
 
   def initialize(minimum: DEFAULT_MINIMUM, scorer: nil)
@@ -60,10 +70,10 @@ class RelevanceFloor
   # vacuidade aprovaria qualquer trecho para qualquer pergunta — que é
   # exatamente o defeito que esta classe existe para corrigir.
   def coverage(question, text)
-    terms = Tokenizer.meaningful(question).uniq
+    terms = Stemmer.meaningful_stems(question).uniq
     return 0.0 if terms.empty? || text.empty?
 
-    present = Tokenizer.tokens(text).to_set
+    present = Stemmer.stems(text).to_set
 
     terms.count { |term| present.include?(term) }.fdiv(terms.size)
   end
