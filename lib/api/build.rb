@@ -29,6 +29,7 @@ require_relative '../tool_registry'
 require_relative '../tracer'
 require_relative 'app'
 require_relative 'authentication'
+require_relative 'console'
 require_relative 'metrics_endpoint'
 require_relative 'observability'
 
@@ -48,7 +49,7 @@ module Api
   # o seu — o braço BM25 precisaria de um índice compartilhado (ou dos vetores
   # esparsos do próprio Qdrant) para valer em produção.
   def self.build(env: ENV, registry: Observability.registry, logs: $stdout)
-    app = MetricsEndpoint.new(application_for(env, registry), registry: registry)
+    app = Console.new(MetricsEndpoint.new(application_for(env, registry), registry: registry))
 
     Observability.wrap(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry: registry, logs: logs)
   end

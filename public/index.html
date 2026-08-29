@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIAD — console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fundo: #fbfbfa;
+    --papel: #ffffff;
+    --borda: #e3e1dc;
+    --texto: #23211d;
+    --fraco: #6b6862;
+    --realce: #9a5b2c;
+    --erro: #a03328;
+    --ok: #3f6b3a;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #181715; --papel: #211f1d; --borda: #37342f; --texto: #e9e6e0;
+      --fraco: #a09b92; --realce: #d99a63; --erro: #e0776a; --ok: #8bbd83;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    border-bottom: 1px solid var(--borda); background: var(--papel);
+    padding: 14px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 620; letter-spacing: .01em; }
+  header h1 span { color: var(--fraco); font-weight: 400; }
+  .chave { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .saude { font-size: 12px; color: var(--fraco); font-family: var(--mono); }
+  main { max-width: 860px; margin: 0 auto; padding: 20px; }
+  nav { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--borda); }
+  nav button {
+    background: none; border: 0; border-bottom: 2px solid transparent; color: var(--fraco);
+    padding: 9px 14px; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  nav button[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--realce); }
+  section[hidden] { display: none; }
+  label { display: block; font-size: 12px; color: var(--fraco); margin: 0 0 5px; letter-spacing: .02em; }
+  textarea, input, select {
+    width: 100%; padding: 9px 11px; font: inherit; color: var(--texto);
+    background: var(--papel); border: 1px solid var(--borda); border-radius: 6px;
+  }
+  textarea { resize: vertical; min-height: 76px; }
+  input[type="password"] { width: 210px; font-family: var(--mono); font-size: 13px; }
+  .linha { display: flex; gap: 12px; }
+  .linha > * { flex: 1; }
+  .acoes { margin-top: 12px; display: flex; gap: 12px; align-items: center; }
+  button.primaria {
+    background: var(--realce); color: #fff; border: 0; border-radius: 6px;
+    padding: 9px 18px; font: inherit; font-weight: 560; cursor: pointer;
+  }
+  button.primaria:disabled { opacity: .5; cursor: progress; }
+  .campo + .campo { margin-top: 14px; }
+  .saida { margin-top: 22px; }
+  .cartao {
+    background: var(--papel); border: 1px solid var(--borda); border-radius: 8px;
+    padding: 15px 17px; margin-bottom: 12px;
+  }
+  .resposta { white-space: pre-wrap; }
+  .meta { margin-top: 12px; font-size: 12px; color: var(--fraco); font-family: var(--mono); }
+  .selo {
+    display: inline-block; font-size: 11px; font-family: var(--mono);
+    border: 1px solid var(--borda); border-radius: 4px; padding: 1px 6px; margin-right: 6px;
+  }
+  .trecho { font-size: 14px; }
+  .trecho + .trecho { margin-top: 10px; border-top: 1px solid var(--borda); padding-top: 10px; }
+  .trecho .cabeca {
+    display: flex; justify-content: space-between; gap: 12px;
+    font-size: 12px; font-family: var(--mono); color: var(--fraco); margin-bottom: 5px;
+  }
+  .titulo { font-size: 12px; color: var(--fraco); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 9px; }
+  .erro { color: var(--erro); }
+  .ok { color: var(--ok); }
+  .aviso { font-size: 12px; color: var(--fraco); margin-top: 7px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AIAD <span>— console</span></h1>
+  <span class="saude" id="saude">verificando…</span>
+  <div class="chave">
+    <label for="chave" style="margin:0">chave</label>
+    <input type="password" id="chave" placeholder="Bearer…" autocomplete="off" spellcheck="false">
+  </div>
+</header>
+
+<main>
+  <nav role="tablist">
+    <button role="tab" id="aba-perguntar" aria-selected="true" aria-controls="perguntar">Perguntar</button>
+    <button role="tab" id="aba-buscar" aria-selected="false" aria-controls="buscar">Buscar</button>
+    <button role="tab" id="aba-ingerir" aria-selected="false" aria-controls="ingerir">Ingerir</button>
+  </nav>
+
+  <section id="perguntar" role="tabpanel">
+    <div class="campo">
+      <label for="pergunta">Pergunta</label>
+      <textarea id="pergunta" placeholder="quantos dias de férias por ano"></textarea>
+    </div>
+    <div class="campo">
+      <label for="filtro-ask">Filtro por origem (opcional)</label>
+      <input id="filtro-ask" placeholder="politica-ferias.txt" autocomplete="off">
+    </div>
+    <div class="acoes">
+      <button class="primaria" id="botao-perguntar">Perguntar</button>
+      <span class="aviso">Escopo <code>read</code>.</span>
+    </div>
+    <div class="saida" id="saida-perguntar"></div>
+  </section>
+
+  <section id="buscar" role="tabpanel" hidden>
+    <div class="linha">
+      <div class="campo" style="flex:3">
+        <label for="consulta">Consulta</label>
+        <input id="consulta" placeholder="reembolso de viagem" autocomplete="off">
+      </div>
+      <div class="campo" style="flex:1">
+        <label for="limite">Limite</label>
+        <input id="limite" type="number" value="5" min="1" max="50">
+      </div>
+    </div>
+    <div class="acoes">
+      <button class="primaria" id="botao-buscar">Buscar</button>
+      <span class="aviso">Trechos crus do acervo, sem passar pelo RAG.</span>
+    </div>
+    <div class="saida" id="saida-buscar"></div>
+  </section>
+
+  <section id="ingerir" role="tabpanel" hidden>
+    <div class="linha">
+      <div class="campo" style="flex:3">
+        <label for="origem">Origem</label>
+        <input id="origem" placeholder="politica-ferias.txt" autocomplete="off">
+      </div>
+      <div class="campo" style="flex:1">
+        <label for="formato">Formato</label>
+        <!-- Os valores têm de bater com ContentCleaner::FORMATS, e uma spec
+             cobra isso: formato a mais aqui vira 422 na cara de quem usa. -->
+        <select id="formato">
+          <option value="texto">texto</option>
+          <option value="log">log</option>
+          <option value="pdf">pdf</option>
+        </select>
+      </div>
+    </div>
+    <div class="campo">
+      <label for="conteudo">Conteúdo</label>
+      <textarea id="conteudo" style="min-height:190px" placeholder="Cole aqui o documento."></textarea>
+    </div>
+    <div class="acoes">
+      <button class="primaria" id="botao-ingerir">Ingerir</button>
+      <span class="aviso">Escopo <code>write</code> — a chave de leitura recebe 403 aqui.</span>
+    </div>
+    <div class="saida" id="saida-ingerir"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const campoChave = $('chave');
+
+  // A chave fica na aba, não no disco: sessionStorage some quando a aba fecha,
+  // enquanto localStorage sobreviveria à sessão inteira do navegador. Nada
+  // dela vai para o HTML servido — quem a digita é quem a tem.
+  const GUARDA = 'aiad.chave';
+  try { campoChave.value = sessionStorage.getItem(GUARDA) || ''; } catch (e) { /* aba privada */ }
+  campoChave.addEventListener('input', () => {
+    try { sessionStorage.setItem(GUARDA, campoChave.value); } catch (e) { /* idem */ }
+  });
+
+  const abas = ['perguntar', 'buscar', 'ingerir'];
+  abas.forEach((nome) => {
+    $('aba-' + nome).addEventListener('click', () => {
+      abas.forEach((outra) => {
+        $('aba-' + outra).setAttribute('aria-selected', String(outra === nome));
+        $(outra).hidden = outra !== nome;
+      });
+    });
+  });
+
+  const escapar = (texto) => String(texto ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+
+  const pontuacao = (valor) => (typeof valor === 'number' ? valor.toFixed(5) : '—');
+
+  async function chamar(rota, corpo) {
+    const chave = campoChave.value.trim();
+    if (!chave) throw new Error('Informe a chave de API no topo da página.');
+
+    const resposta = await fetch(rota, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + chave, 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo)
+    });
+
+    const texto = await resposta.text();
+    let dados;
+    try { dados = JSON.parse(texto); } catch (e) { dados = { error: texto }; }
+
+    // O erro da API já vem explicado e em português — repeti-lo é mais útil
+    // que traduzir um código de status para uma frase genérica.
+    if (!resposta.ok) throw new Error(dados.error || ('HTTP ' + resposta.status));
+
+    return dados;
+  }
+
+  function trechos(lista) {
+    if (!lista || !lista.length) return '';
+
+    return `<div class="cartao">
+      <div class="titulo">Trechos recuperados (${lista.length})</div>
+      ${lista.map((t) => `<div class="trecho">
+        <div class="cabeca"><span>${escapar(t.source)}</span><span>score ${pontuacao(t.score)}</span></div>
+        <div>${escapar(t.text)}</div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  function falhar(alvo, erro) {
+    alvo.innerHTML = `<div class="cartao erro">${escapar(erro.message)}</div>`;
+  }
+
+  // Cada ação desabilita o próprio botão enquanto roda: sem isso o duplo
+  // clique vira duas ingestões do mesmo documento, ou duas perguntas pagas.
+  function acao(botao, alvo, executar) {
+    botao.addEventListener('click', async () => {
+      botao.disabled = true;
+      alvo.innerHTML = '<div class="cartao">…</div>';
+      try {
+        alvo.innerHTML = await executar();
+      } catch (erro) {
+        falhar(alvo, erro);
+      } finally {
+        botao.disabled = false;
+      }
+    });
+  }
+
+  acao($('botao-perguntar'), $('saida-perguntar'), async () => {
+    const pergunta = $('pergunta').value.trim();
+    if (!pergunta) throw new Error('Escreva uma pergunta.');
+
+    const origem = $('filtro-ask').value.trim();
+    const corpo = { question: pergunta };
+    if (origem) corpo.filter = { source: origem };
+
+    const dados = await chamar('/ask', corpo);
+    const uso = dados.usage || {};
+    const selos = [
+      dados.cached ? '<span class="selo">do cache</span>' : '',
+      `<span class="selo">${(dados.sources || []).length} origem(ns)</span>`,
+      `<span class="selo">${uso.total_tokens ?? 0} tokens</span>`
+    ].join('');
+
+    return `<div class="cartao">
+        <div class="titulo">Resposta</div>
+        <div class="resposta">${escapar(dados.answer)}</div>
+        <div class="meta">${selos}</div>
+        <div class="meta">origens: ${escapar((dados.sources || []).join(', ') || 'nenhuma')}</div>
+      </div>${trechos(dados.passages)}`;
+  });
+
+  acao($('botao-buscar'), $('saida-buscar'), async () => {
+    const consulta = $('consulta').value.trim();
+    if (!consulta) throw new Error('Escreva uma consulta.');
+
+    const dados = await chamar('/search', {
+      query: consulta,
+      limit: Number($('limite').value) || 5
+    });
+
+    if (!dados.results || !dados.results.length) {
+      return '<div class="cartao">Nenhum trecho casou com a consulta.</div>';
+    }
+
+    return trechos(dados.results);
+  });
+
+  acao($('botao-ingerir'), $('saida-ingerir'), async () => {
+    const origem = $('origem').value.trim();
+    const conteudo = $('conteudo').value.trim();
+    if (!origem || !conteudo) throw new Error('Origem e conteúdo são obrigatórios.');
+
+    const dados = await chamar('/documents', {
+      source: origem,
+      content: conteudo,
+      format: $('formato').value
+    });
+
+    return `<div class="cartao">
+      <div class="titulo">Ingerido</div>
+      <div class="ok">${escapar(dados.source)} — ${dados.chunks} trecho(s) indexado(s).</div>
+      <div class="meta">O índice léxico é por processo: reiniciar a API exige reingerir.</div>
+    </div>`;
+  });
+
+  // O /health é público de propósito, então o console sabe se a API está de pé
+  // antes de a chave ser digitada — e um erro de chave não se confunde com um
+  // erro de API fora do ar.
+  fetch('/health')
+    .then((r) => r.json())
+    .then((d) => { $('saude').textContent = 'API ' + d.status; $('saude').className = 'saude ok'; })
+    .catch(() => { $('saude').textContent = 'API fora do ar'; $('saude').className = 'saude erro'; });
+})();
+</script>
+
+</body>
+</html>

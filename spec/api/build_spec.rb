@@ -30,6 +30,15 @@ RSpec.describe 'Api.build' do
     expect(last_response.status).to eq(200)
   end
 
+  # A montagem inteira, do jeito que o `config.ru` a usa: se a página não vier
+  # na imagem, o `Api.build` nem chega a devolver uma aplicação.
+  it 'serves the console page at the root without requiring a key' do
+    get '/'
+
+    expect(last_response.status).to eq(200)
+    expect(last_response.headers['content-type']).to include('text/html')
+  end
+
   it 'protects the other routes with the configured keys' do
     post '/search'
 

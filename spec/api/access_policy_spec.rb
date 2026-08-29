@@ -8,6 +8,18 @@ RSpec.describe Api::AccessPolicy do
       expect(described_class.scope_for('GET', '/health')).to be_nil
     end
 
+    # A página é o que pede a chave: exigir chave para carregá-la seria pedir
+    # ao navegador o que ele vai lá buscar.
+    it 'leaves the console page public' do
+      expect(described_class.scope_for('GET', '/')).to be_nil
+    end
+
+    # E só ela. A raiz por outro método cai na regra do não-mapeado, que é o
+    # escopo mais restritivo.
+    it 'does not make the root public for other methods' do
+      expect(described_class.scope_for('POST', '/')).to eq(:write)
+    end
+
     # Escopo próprio, e não `read`: o Prometheus não precisa ler documento para
     # raspar métrica, e quem lê documento não precisa ver a operação por dentro.
     it 'requires its own scope to scrape the metrics' do
