@@ -30,8 +30,18 @@ end
 Quando('a API reinicia com o mesmo acervo') do
   @transporte ||= InMemoryQdrantTransport.new
   @indice = Bm25Index.new
-  @carregados = LexicalIndexLoader.new(qdrant: QdrantClient.new(transport: @transporte),
-                                       index: @indice, collection: INDICE_COLECAO).load
+  @resultado = LexicalIndexLoader.new(qdrant: QdrantClient.new(transport: @transporte),
+                                      index: @indice, collection: INDICE_COLECAO).load
+end
+
+# O teto existe porque a varredura roda antes de a porta abrir: sem ele, acervo
+# grande faria a API não subir, em vez de subir com metade da busca.
+Quando('a API reinicia com teto de {int} trechos') do |teto|
+  @transporte ||= InMemoryQdrantTransport.new
+  @indice = Bm25Index.new
+  @resultado = LexicalIndexLoader.new(qdrant: QdrantClient.new(transport: @transporte),
+                                      index: @indice, collection: INDICE_COLECAO,
+                                      max_documents: teto).load
 end
 
 Quando('a API reinicia com o Qdrant fora do ar') do
@@ -41,10 +51,10 @@ Quando('a API reinicia com o Qdrant fora do ar') do
 
   # A política de degradação é a do `Api.build`, reproduzida aqui: o erro sobe
   # do carregador e quem monta a aplicação decide não morrer por causa dele.
-  @carregados = begin
+  @resultado = begin
     carregador.load
   rescue StandardError
-    0
+    LexicalIndexLoader::EMPTY.merge(loaded: 0, complete: false)
   end
   @partida_falhou = false
 end
@@ -54,8 +64,16 @@ Então('a busca léxica ainda deve encontrar {string}') do |termo|
 end
 
 Então('o índice léxico deve ter {int} trechos') do |quantidade|
-  expect(@carregados).to eq(quantidade)
+  expect(@resultado[:loaded]).to eq(quantidade)
   expect(@indice.size).to eq(quantidade)
+end
+
+Então('o índice deve estar marcado como completo') do
+  expect(@resultado[:complete]).to be(true)
+end
+
+Então('o índice deve estar marcado como parcial') do
+  expect(@resultado[:complete]).to be(false)
 end
 
 Então('a partida não deve ter falhado') do

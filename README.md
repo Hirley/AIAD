@@ -139,17 +139,27 @@ decide o que fazer quando isso não dá certo:
 
 - **Qdrant fora do ar não derruba a API.** Mesma inversão do exportador de trace e do avaliador — quem
   aquece não derruba quem faz, e as rotas já sabem responder 503 quando a busca falha.
-- **Mas a degradação não é silenciosa.** O medidor `aiad_lexical_index_documents` publica o tamanho do
-  índice. Quem tem documento indexado e mede zero ali está buscando com um braço só.
+- **Acervo maior que o teto também não derruba.** A varredura roda **antes de o Puma abrir a porta**, e
+  sem teto o conserto teria trocado um defeito por outro pior: "sobe e busca pela metade" viraria "não
+  sobe" num acervo grande, derrubando readiness probe e pondo o contêiner em loop de reinício. São dois
+  tetos — `AIAD_LEXICAL_INDEX_MAX` (50 000 trechos) limita o trabalho, `AIAD_LEXICAL_INDEX_TIMEOUT` (30 s)
+  limita a espera com um Qdrant lento. Estourando qualquer um, a API sobe com o índice parcial.
+- **Mas nada disso é silencioso.** Dois medidores contam a história inteira:
+  `aiad_lexical_index_documents` diz quantos trechos entraram, e `aiad_lexical_index_complete` diz se isso
+  é o acervo inteiro (`1`) ou só o que coube (`0`). O par é o que separa três situações que o número
+  sozinho confunde: acervo vazio (`0` e `1`), acervo que não deu para ler (`0` e `0`) e acervo grande
+  demais (`50000` e `0`).
 
 Reconstruir, e não persistir em disco: o acervo é a fonte, e um segundo lugar guardando a mesma verdade
 divergiria no primeiro documento apagado direto no Qdrant.
 
-O que isto **não** resolve: o índice continua sendo uma cópia por processo. Com `workers 0` no Puma, que
-é a configuração atual, há um processo só. Num deploy com vários workers cada um carregaria a sua —
-iguais depois do boot, divergindo a cada ingestão, porque só o worker que atendeu o `POST /documents`
-indexa o trecho novo. Para valer ali, o braço BM25 precisaria de um índice compartilhado ou dos vetores
-esparsos do próprio Qdrant.
+O que isto **não** resolve, e vale saber antes de mexer no `workers` do Puma: o índice é uma estrutura na
+memória do processo. Hoje há `workers 0` e `preload_app!`, então ele é montado uma vez e ponto. Com vários
+workers o `preload_app!` faria o aquecimento rodar **uma vez só, no master**, e os workers herdariam o
+índice pronto pelo fork — o custo de partida não se multiplicaria. O que se quebra não é a carga, é o que
+vem depois: cada ingestão é atendida por um worker só, e a partir da primeira as cópias divergem em
+silêncio. Para valer ali, o braço BM25 precisaria de um índice compartilhado ou dos vetores esparsos do
+próprio Qdrant.
 
 ### RAG avançado
 
@@ -482,6 +492,7 @@ curl -H 'Authorization: Bearer SUA-CHAVE-DE-METRICAS' http://127.0.0.1:9292/metr
 | `aiad_process_cpu_seconds_total` | contador | CPU acumulada |
 | `aiad_process_threads` | medidor | Threads vivas (o Puma atende com cinco) |
 | `aiad_lexical_index_documents` | medidor | Trechos no índice BM25 — zero com acervo cheio é busca pela metade |
+| `aiad_lexical_index_complete` | medidor | `1` se o índice cobre o acervo inteiro; `0` se parou no teto ou falhou |
 | `aiad_process_uptime_seconds` | medidor | Tempo desde a subida |
 
 Decisões que valem registrar:
