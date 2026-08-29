@@ -2,6 +2,7 @@
 
 require_relative 'prompt_builder'
 require_relative 'prompt_compressor'
+require_relative 'relevance_floor'
 require_relative 'reranker'
 require_relative 'token_counter'
 require_relative 'tracer'
@@ -19,17 +20,15 @@ class RagPipeline
 
   def initialize(retriever:, llm:, collection:, prompt_builder: PromptBuilder.new, top_k: DEFAULT_TOP_K,
                  reranker: nil, compressor: nil, context_budget: nil, counter: TokenCounter.new,
-                 tracer: Tracer.null)
+                 tracer: Tracer.null, relevance_floor: nil)
     @retriever = retriever
     @llm = llm
     @collection = collection
     @prompt_builder = prompt_builder
-    @top_k = top_k
-    @reranker = reranker
-    @compressor = compressor
-    @context_budget = context_budget
     @counter = counter
     @tracer = tracer
+
+    shape_retrieval(top_k, reranker, relevance_floor, compressor, context_budget)
   end
 
   def answer(question, filter: nil)
@@ -39,6 +38,17 @@ class RagPipeline
   end
 
   private
+
+  # Os cinco que decidem o que chega ao prompt, separados dos que dizem o que o
+  # pipeline é. Todos opcionais: sem nenhum deles a recuperação é o top-k cru,
+  # que é como este pipeline começou.
+  def shape_retrieval(top_k, reranker, relevance_floor, compressor, context_budget)
+    @top_k = top_k
+    @reranker = reranker
+    @relevance_floor = relevance_floor
+    @compressor = compressor
+    @context_budget = context_budget
+  end
 
   # O nome do modelo vai no trace para que tokens e custo saiam rotulados por
   # modelo, e não num balde "desconhecido". Modelo que não se identifica não
@@ -75,11 +85,17 @@ class RagPipeline
 
   # Com reranker, recupera um pool maior e deixa a reordenação escolher os
   # top_k: reordenar só o que já cabia no contexto não mudaria nada.
+  #
+  # O piso vem por último, depois de recuperar e reordenar, porque é a única
+  # etapa que pode devolver menos do que pediram — inclusive nada. As
+  # anteriores escolhem *quais* dos trechos entram; ele decide se algum
+  # merece entrar.
   def retrieve(question, filter:)
     hits = @retriever.search(question, collection: @collection, limit: retrieval_limit, filter: filter) || []
     hits = @reranker.rerank(question, hits, limit: @top_k) if @reranker
+    passages = hits.filter_map { |hit| to_passage(hit) }
 
-    hits.filter_map { |hit| to_passage(hit) }
+    @relevance_floor ? @relevance_floor.apply(question, passages) : passages
   end
 
   # Encaixa o contexto no orçamento de tokens antes de montar o prompt.
