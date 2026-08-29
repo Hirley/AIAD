@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require_relative '../composite_exporter'
+require_relative '../langfuse_exporter'
 require_relative '../metric_registry'
 require_relative '../process_collector'
 require_relative '../prometheus_evaluation_log'
 require_relative '../prometheus_trace_exporter'
+require_relative '../tracer'
 require_relative 'instrumentation'
 require_relative 'request_logger'
 
@@ -25,6 +28,16 @@ module Api
         PrometheusTraceExporter.install(registry)
         PrometheusEvaluationLog.install(registry)
       end
+    end
+
+    # O trace vai para os dois lugares que respondem perguntas diferentes: o
+    # Prometheus agrega e diz que o custo subiu ontem às 3h; o Langfuse guarda
+    # a requisição inteira e diz por quê — qual pergunta, qual resposta, qual
+    # span demorou. Sem chave do Langfuse sobra só o Prometheus, e a aplicação
+    # sobe igual: observabilidade externa é opcional, não requisito de boot.
+    def self.tracer(registry:, env: ENV)
+      Tracer.new(exporter: CompositeExporter.for(PrometheusTraceExporter.new(registry: registry),
+                                                 LangfuseExporter.from_env(env)))
     end
 
     # A ordem da pilha não é acidental. Log e métrica ficam **por fora** da

@@ -16,7 +16,16 @@ class FakeHttpClient
     @requests = []
   end
 
+  # Servidor fora do ar. Existe como método em vez de `allow(...).to receive`
+  # porque o Cucumber deste projeto não carrega rspec-mocks — e porque "o
+  # serviço caiu" é um estado do dublê, não uma dobra no teste.
+  def offline!
+    @offline = true
+  end
+
   def request(net_request)
+    raise Errno::ECONNREFUSED if @offline
+
     @requests << net_request
     Response.new(@code, @body)
   end

@@ -60,10 +60,12 @@ module Api
     options = retrieval_options(env)
     llm = llm_for(env)
     etl, retriever = retrieval_for(env, llm, options)
+    tracer = Observability.tracer(registry: registry, env: env)
 
     App.new(etl: etl, collection: collection,
-            rag: rag_pipeline(retriever, llm, collection, options, registry),
-            agent: agent_for(retriever, collection, registry, env))
+            rag: rag_pipeline(retriever: retriever, llm: llm, collection: collection, options: options,
+                              registry: registry, tracer: tracer),
+            agent: agent_for(retriever: retriever, collection: collection, tracer: tracer, env: env))
   end
   private_class_method :application_for
 
@@ -117,12 +119,12 @@ module Api
   # gastaria CPU para chegar na mesma nota e contaria a mesma resposta duas
   # vezes no histograma — inflando a média com repetição em vez de medir
   # respostas novas.
-  def self.rag_pipeline(retriever, llm, collection, options, registry)
+  def self.rag_pipeline(retriever:, llm:, collection:, options:, registry:, tracer:)
     rag = RagPipeline.new(
       retriever: retriever, llm: llm, collection: collection, top_k: DEFAULT_TOP_K,
       reranker: (Reranker.new if options[:rerank]),
       compressor: PromptCompressor.new, context_budget: options[:context_budget],
-      tracer: Tracer.new(exporter: PrometheusTraceExporter.new(registry: registry))
+      tracer: tracer
     )
     rag = EvaluatedRag.new(rag: rag, log: PrometheusEvaluationLog.new(registry: registry)) if options[:evaluate]
 
@@ -138,12 +140,11 @@ module Api
   #
   # A memória é por processo, como o índice BM25 e o cache semântico. Vale para
   # um worker; com mais de um, a conversa dependeria de qual deles atendeu.
-  def self.agent_for(retriever, collection, registry, env)
+  def self.agent_for(retriever:, collection:, tracer:, env:)
     model = AnthropicLlm.from_env(env)
     return nil if model.nil?
 
     tools = ToolRegistry.new([RetrievalTool.build(retriever: retriever, collection: collection)])
-    tracer = Tracer.new(exporter: PrometheusTraceExporter.new(registry: registry))
 
     ConversationalAgent.new(agent: ReactAgent.new(llm: model, tools: tools, tracer: tracer),
                             memory: memory_for(env))

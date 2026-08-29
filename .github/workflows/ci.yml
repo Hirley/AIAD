@@ -122,6 +122,26 @@ jobs:
           echo "$resposta" | grep -q 'politica.txt'
           echo "$resposta" | grep -q 'trinta dias'
 
+      # A inversão que vale para qualquer observador: ninguém aceita cair
+      # porque quem estava olhando caiu. As chaves aqui são de mentira e a URL
+      # aponta para uma porta fechada dentro do próprio container — nenhuma
+      # credencial de Langfuse entra no CI, e o que se exercita é justamente o
+      # caminho da recusa de conexão.
+      - name: Langfuse inalcançável não derruba a resposta nem a métrica
+        env:
+          LANGFUSE_PUBLIC_KEY: pk-de-ci
+          LANGFUSE_SECRET_KEY: sk-de-ci
+          LANGFUSE_URL: http://127.0.0.1:1
+        run: |
+          docker compose up --detach --wait --wait-timeout 120 api
+          resposta=$(curl -sf -X POST http://127.0.0.1:9292/ask \
+            -H 'Authorization: Bearer chave-de-ci-leitura' -H 'Content-Type: application/json' \
+            -d '{"question":"quantos dias de férias por ano"}')
+          echo "$resposta"
+          echo "$resposta" | grep -q 'politica.txt'
+          metricas=$(curl -sf http://127.0.0.1:9292/metrics -H 'Authorization: Bearer chave-de-ci-metricas')
+          echo "$metricas" | grep -qE '^aiad_llm_calls_total\{[^}]*\} [1-9]'
+
       - name: Logs em caso de falha
         if: failure()
         run: docker compose logs
