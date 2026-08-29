@@ -27,14 +27,14 @@ module Api
   # mesmo motivo: um índice que ninguém encheu é um recuperador montado pela
   # metade, e deixar isso a cargo de quem chama é deixar a chance de esquecer.
   module Retrieval
-    def self.build(env:, llm:, options:, collection:, registry:)
+    def self.build(env:, llm:, options:, collection:, registry:, logs: $stdout)
       lexical_index = Bm25Index.new
       parent_store = ParentStore.new
       qdrant = QdrantClient.new(transport: HttpQdrantTransport.from_env(env))
       etl = etl_pipeline(qdrant, lexical_index, parent_store)
 
       LexicalIndexWarmup.run(qdrant: qdrant, index: lexical_index, collection: collection,
-                             registry: registry, env: env)
+                             registry: registry, env: env, logs: logs)
 
       { etl: etl, retriever: retriever_for(etl, lexical_index, parent_store, llm, options) }
     end

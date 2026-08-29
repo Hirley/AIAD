@@ -107,6 +107,18 @@ jobs:
           test "$(echo "$linha" | jq -r '.status')" = "200"
           test "$(echo "$linha" | jq -r '.route')" = "/health"
 
+      # A métrica diz que o índice ficou pela metade; só o log diz por quê, e é
+      # o log que quem sobe o contêiner lê. Métrica nova com CI cego para ela
+      # já é o padrão que este arquivo repetiu uma vez.
+      - name: A partida diz no log como o índice léxico ficou
+        run: |
+          linha=$(docker compose logs --no-log-prefix api | grep '"event":"lexical_index_warmup"' | tail -1)
+          echo "$linha"
+          test "$(echo "$linha" | jq -r '.level')" = "info"
+          test "$(echo "$linha" | jq -r '.complete')" = "true"
+          # Acervo ainda vazio nesta altura: completo e sem motivo de corte.
+          test "$(echo "$linha" | jq -r '.reason')" = "null"
+
       - name: Chave de leitura não pode ingerir
         run: |
           status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:9292/documents \
@@ -163,6 +175,13 @@ jobs:
           # que a contagem sozinha nao enxerga, porque parcial e completo
           # contam igual quando o acervo tem um documento so.
           grep -q '^aiad_lexical_index_complete 1$' metricas.txt
+          # A mesma historia na linha de log da partida, que e onde ela chega a
+          # quem esta olhando o boot em vez de um painel.
+          linha=$(docker compose logs --no-log-prefix api | grep '"event":"lexical_index_warmup"' | tail -1)
+          echo "$linha"
+          test "$(echo "$linha" | jq -r '.complete')" = "true"
+          test "$(echo "$linha" | jq -r '.reason')" = "null"
+          test "$(echo "$linha" | jq -r '.documents')" -gt 0
 
       # A inversão que vale para qualquer observador: ninguém aceita cair
       # porque quem estava olhando caiu. As chaves aqui são de mentira e a URL

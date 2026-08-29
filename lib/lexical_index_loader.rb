@@ -32,7 +32,7 @@ require_relative 'qdrant_client'
 #   projeto estão escritas.
 class LexicalIndexLoader
   PAGE = 256
-  EMPTY = { loaded: 0, complete: true }.freeze
+  EMPTY = { loaded: 0, complete: true, reason: nil }.freeze
 
   # Dois tetos, porque a varredura acontece **antes de o Puma abrir a porta**.
   # Sem eles, o conserto do índice teria trocado um defeito por outro pior:
@@ -45,7 +45,9 @@ class LexicalIndexLoader
   # **não é erro**: a API sobe com o índice parcial, que é melhor que índice
   # nenhum e muito melhor que não subir. O que não pode é isso passar
   # despercebido, e é o `complete: false` que carrega essa informação para
-  # fora.
+  # fora — junto do `reason:`, que diz **qual** dos dois tetos cortou. A
+  # métrica não tem como carregar o motivo sem virar um rótulo por situação; o
+  # log da partida carrega de graça.
   MAX_DOCUMENTS = 50_000
   TIMEOUT = 30
 
@@ -62,9 +64,11 @@ class LexicalIndexLoader
     @clock = clock
   end
 
-  # Devolve `{ loaded:, complete: }`. `complete` falso significa que o acervo é
-  # maior do que o que coube — quem chama decide o que fazer com isso, e a
-  # métrica publica o mesmo par para quem estiver olhando de fora.
+  # Devolve `{ loaded:, complete:, reason: }`. `complete` falso significa que o
+  # acervo é maior do que o que coube, e `reason` diz o que o cortou:
+  # `:max_documents` ou `:timeout`. Quem chama decide o que fazer com isso — a
+  # métrica publica o par para quem olha de fora, e o log da partida publica o
+  # motivo.
   def load
     return EMPTY unless @qdrant.collection_exists?(@collection)
 
@@ -84,9 +88,20 @@ class LexicalIndexLoader
       batch = @qdrant.scroll(@collection, limit: page_for(loaded), offset: offset)
       loaded += index_all(batch[:points])
       offset = batch[:next]
-      return { loaded: loaded, complete: true } if offset.nil?
-      return { loaded: loaded, complete: false } if loaded >= @max_documents || @clock.call >= deadline
+      return { loaded: loaded, complete: true, reason: nil } if offset.nil?
+      return partial(loaded, :max_documents) if loaded >= @max_documents
+      return partial(loaded, :timeout) if @clock.call >= deadline
     end
+  end
+
+  # Os dois tetos podem estourar na mesma página, e aí o motivo precisa ser
+  # escolhido. O de trechos ganha por ser o **determinístico**: ele depende do
+  # tamanho do acervo e vai estourar igual no próximo boot, enquanto o de tempo
+  # depende de como o Qdrant estava naquele minuto. Culpar o relógio quando o
+  # acervo também não cabia mandaria quem lê o log investigar latência de uma
+  # partida que na verdade tem documento demais.
+  def partial(loaded, reason)
+    { loaded: loaded, complete: false, reason: reason }
   end
 
   # A última página vem menor para não passar do teto: pedir 256 quando faltam
