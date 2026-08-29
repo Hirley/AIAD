@@ -65,7 +65,7 @@ class ReactAgent
   # de voltas já estão nos spans e nos metadados, e repetir tudo na saída só
   # entulharia o visualizador.
   def run(question)
-    @tracer.trace('react.run', input: question) do |span|
+    @tracer.trace('react.run', input: question, metadata: model_metadata) do |span|
       outcome = run_within(span, question)
       span.output = outcome[:answer]
       span.annotate(iterations: outcome[:iterations], finished: outcome[:finished])
@@ -75,6 +75,13 @@ class ReactAgent
   end
 
   private
+
+  # Um agente pode dar várias voltas, cada uma custando uma chamada: sem o nome
+  # do modelo no trace, o custo do agente somaria num balde "desconhecido"
+  # junto com o do RAG.
+  def model_metadata
+    @llm.respond_to?(:model) ? { model: @llm.model } : {}
+  end
 
   # O laço fica fora dos spans de propósito: sair de dentro de um span com
   # `return` fecharia ele sem saída registrada. Cada volta abre e fecha os seus.

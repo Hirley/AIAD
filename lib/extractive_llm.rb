@@ -10,6 +10,14 @@
 class ExtractiveLlm
   NO_ANSWER = 'Não encontrei essa informação nos documentos indexados.'
   FIRST_PASSAGE = /^\[1\]\s+\(origem:[^)]*\)\n(.+?)(?:\n\s*\n|\z)/m
+  MODEL = 'extrativo'
+
+  # Se diz pelo nome, como um modelo real: assim a métrica de custo distingue
+  # "rodando no extrativo" de "rodando num modelo pago", que é a primeira coisa
+  # que se pergunta ao olhar uma conta.
+  def model
+    MODEL
+  end
 
   def complete(prompt)
     match = FIRST_PASSAGE.match(prompt.to_s)

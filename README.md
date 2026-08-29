@@ -23,10 +23,11 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 | `RagPipeline` | Recuperação → prompt → geração, devolvendo resposta, trechos e origens |
 | `HttpQdrantTransport` | Transporte HTTP real para o Qdrant, montado a partir do ambiente |
 | `ExtractiveLlm` | Resposta extrativa, usada enquanto nenhum modelo real está configurado |
+| `AnthropicLlm` | Modelo de verdade pela API de mensagens, com transporte injetável e chave fora do `inspect` |
 | `ApiKeyStore` | Chaves de API e escopos, guardadas como digest e comparadas em tempo constante |
 | `Api::AccessPolicy` | Escopo exigido por rota; rota não mapeada exige o escopo mais restritivo |
 | `Api::Authentication` | Middleware Rack de autenticação e autorização |
-| `Api::App` | API HTTP: `/health`, `/documents`, `/search`, `/ask` |
+| `Api::App` | API HTTP: `/health`, `/documents`, `/search`, `/ask`, `/agent` |
 | `Reranker` | Reordena os candidatos recuperados, com scorer injetável |
 | `ParentDocumentRetriever` | Busca no chunk, entrega o documento inteiro |
 | `ParentStore` | Guarda o documento inteiro de cada origem |
@@ -206,11 +207,14 @@ mundo é a API, que exige chave.
 | `POST /documents` | `write` | Ingere um documento (`content`, `source`, `format`, `metadata`) |
 | `POST /search` | `read` | Busca trechos (`query`, `limit`, `filter`) |
 | `POST /ask` | `read` | Pergunta com RAG (`question`, `filter`) |
+| `POST /agent` | `read` | Pergunta ao agente, que decide o que buscar (`question`, `session`) |
 
-As classes de agente da Fase 3 — `ReactAgent`, `PlanAndSolveAgent`, `AgentCrew`, `ConversationalAgent` —
-ainda **não têm rota**. Hoje elas são biblioteca, exercitada por RSpec e pelos cenários Cucumber, e o
-`/ask` responde por RAG direto, sem agente e sem memória. Ligar o agente à API é o item 2 do projeto
-integrador ([#5](https://github.com/Hirley/AIAD/issues/5)).
+O `/ask` responde por RAG direto: uma recuperação, um prompt, uma resposta. O `/agent` põe um `ReactAgent`
+na frente, com a busca como ferramenta e memória por sessão — ele decide **se** e **quantas vezes**
+consultar o acervo antes de responder. Custa mais chamadas de modelo; serve para pergunta que uma
+recuperação só não resolve.
+
+O `PlanAndSolveAgent` e o `AgentCrew` continuam sem rota, como biblioteca exercitada por RSpec e Cucumber.
 
 ```bash
 curl -X POST http://127.0.0.1:9292/documents \
@@ -238,6 +242,54 @@ o bundle já compilado, sem `build-essential` e sem as gems de teste. Dá ~285 M
 
 A imagem sozinha sobe e responde `200` em `/health`, `401` em qualquer rota sem chave — e `503` no `/ask`,
 porque sem Qdrant na rede não há o que buscar. Para exercitar de verdade, é o compose.
+
+### O agente e o modelo de verdade
+
+Com `ANTHROPIC_API_KEY` no ambiente, a API passa a usar um modelo real — tanto no `/ask` quanto no
+`/agent`. Sem ela, o `/ask` segue extrativo e o `/agent` responde `503` dizendo o que configurar.
+
+```bash
+ANTHROPIC_API_KEY=sua-chave
+AIAD_MODEL=claude-sonnet-5          # opcional
+```
+
+```bash
+curl -X POST http://127.0.0.1:9292/agent \
+  -H 'Authorization: Bearer SUA-CHAVE' -H 'Content-Type: application/json' \
+  -d '{"question":"quantos dias de férias e como funciona o plano de saúde"}'
+```
+
+A resposta traz `answer`, `session`, `iterations`, `finished` e `tools`. A `session` volta sempre: mande-a
+de novo na próxima pergunta e o agente continua de onde parou — é o que permite perguntar *"e quantos
+períodos?"* sem repetir o assunto.
+
+Decisões que valem registrar:
+
+- **Sem modelo, o agente não existe — e a rota diz isso.** O `ExtractiveLlm` recorta trecho, não escreve
+  "Pensamento / Ação / Resposta Final". Montar o ReAct em cima dele daria seis voltas no laço para
+  devolver "não cheguei a uma conclusão": lento, caro e sem explicar. Um `503` imediato nomeando a
+  variável que falta é uma falha melhor.
+- **O trajeto não volta para o cliente.** As observações são trechos de documento que ninguém pediu —
+  mesmo motivo pelo qual o `/ask` não devolve o prompt. Volta o que ajuda a confiar na resposta: quantas
+  voltas deu, se concluiu e em que ferramentas se apoiou.
+- **A sessão é criada quando não vem.** A primeira pergunta não precisa saber que existe sessão; a
+  segunda já pode continuar.
+- **O escopo é `read`.** O agente lê o mesmo acervo que o `/ask`, só que decidindo sozinho o que buscar.
+  Não ingere nem apaga nada.
+- **O modelo se identifica.** `AnthropicLlm` e `ExtractiveLlm` respondem a `model`, e o nome entra no
+  trace: a métrica de custo distingue `model="extrativo"` de `model="claude-sonnet-5"`, que é a primeira
+  coisa que se pergunta ao olhar uma conta.
+- **A chave nunca aparece em `inspect`**, como no `ApiKeyStore`: um dump de exceção não pode carregar
+  credencial.
+- **Timeout explícito na chamada ao modelo.** Chamada sem timeout é a forma mais fácil de travar um
+  processo web inteiro — as cinco threads do Puma ficariam presas esperando um servidor que não responde.
+
+A memória da conversa é **por processo**, como o índice BM25, o `ParentStore` e o cache semântico: vale
+para um worker, e com mais de um a conversa dependeria de qual deles atendeu.
+
+O cliente do modelo é testado como o do Qdrant: transporte injetável, sem rede e sem credencial. A suíte
+inteira continua rodando offline — o que não dá para verificar aqui é a resposta do provedor real, e por
+isso o formato dela está isolado num único método.
 
 ### Controle de acesso
 

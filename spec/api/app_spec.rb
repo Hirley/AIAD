@@ -3,6 +3,7 @@
 require 'rack/test'
 
 require_relative '../../lib/api/app'
+require_relative '../../lib/conversational_agent'
 
 RSpec.describe Api::App do
   include Rack::Test::Methods
@@ -17,8 +18,10 @@ RSpec.describe Api::App do
   let(:llm) { FakeLlm.new }
   let(:rag) { RagPipeline.new(retriever: etl, llm: llm, collection: 'documentos', top_k: 2) }
 
+  let(:agent) { nil }
+
   def app
-    described_class.new(etl: etl, rag: rag, collection: 'documentos')
+    described_class.new(etl: etl, rag: rag, collection: 'documentos', agent: agent)
   end
 
   def json_body
@@ -231,6 +234,101 @@ RSpec.describe Api::App do
       post_json('/ask', question: 'quantos dias de férias por ano')
 
       expect(json_body['cached']).to be(false)
+    end
+  end
+
+  describe 'POST /agent' do
+    # Um agente de mentira com a interface do ConversationalAgent: `ask`
+    # recebendo a sessão e a pergunta.
+    let(:agent) do
+      instance_double(ConversationalAgent).tap do |double|
+        allow(double).to receive(:ask) do |session, question|
+          { question: question, answer: 'Trinta dias por ano.', conversation: session, iterations: 2,
+            finished: true, steps: [{ tool: 'buscar_documentos' }, { tool: 'buscar_documentos' }] }
+        end
+      end
+    end
+
+    it 'answers the question' do
+      post_json('/agent', question: 'quantos dias de férias por ano')
+
+      expect(json_body['answer']).to eq('Trinta dias por ano.')
+    end
+
+    it 'reports how many turns it took and whether it concluded' do
+      post_json('/agent', question: 'quantos dias de férias por ano')
+
+      expect(json_body).to include('iterations' => 2, 'finished' => true)
+    end
+
+    it 'reports which tools it leaned on, without repeating them' do
+      post_json('/agent', question: 'quantos dias de férias por ano')
+
+      expect(json_body['tools']).to eq(['buscar_documentos'])
+    end
+
+    # As observações são trechos de documento que o cliente não pediu — mesmo
+    # motivo pelo qual o /ask não devolve o prompt.
+    it 'does not return the raw trajectory' do
+      post_json('/agent', question: 'quantos dias de férias por ano')
+
+      expect(json_body).not_to have_key('steps')
+    end
+
+    it 'demands a question' do
+      post_json('/agent', {})
+
+      expect(last_response.status).to eq(422)
+    end
+
+    describe 'sessão' do
+      it 'creates one when the caller did not send it, so the next turn can continue' do
+        post_json('/agent', question: 'quantos dias de férias por ano')
+
+        expect(json_body['session']).not_to be_empty
+      end
+
+      it 'keeps the session the caller sent' do
+        post_json('/agent', question: 'e quantos períodos?', session: 'conversa-1')
+
+        expect(json_body['session']).to eq('conversa-1')
+      end
+
+      it 'passes the session to the agent, which is what gives it memory' do
+        post_json('/agent', question: 'e quantos períodos?', session: 'conversa-1')
+
+        expect(agent).to have_received(:ask).with('conversa-1', 'e quantos períodos?')
+      end
+
+      it 'treats a blank session as no session' do
+        post_json('/agent', question: 'pergunta', session: '   ')
+
+        expect(json_body['session'].strip).not_to be_empty
+      end
+    end
+
+    # Falhar imediato dizendo o que configurar é melhor que dar seis voltas no
+    # laço para devolver "não cheguei a uma conclusão".
+    describe 'sem modelo configurado' do
+      let(:agent) { nil }
+
+      it 'answers 503 instead of pretending' do
+        post_json('/agent', question: 'quantos dias de férias por ano')
+
+        expect(last_response.status).to eq(503)
+      end
+
+      it 'says what to configure' do
+        post_json('/agent', question: 'quantos dias de férias por ano')
+
+        expect(json_body['error']).to include('ANTHROPIC_API_KEY')
+      end
+
+      it 'does not break the other routes' do
+        get '/health'
+
+        expect(last_response.status).to eq(200)
+      end
     end
   end
 end

@@ -6,6 +6,9 @@ class FakeHttpClient
   Response = Struct.new(:code, :body)
 
   attr_reader :requests
+  # Escrever código e corpo depois de construído é o que permite exercitar
+  # várias respostas do mesmo servidor num teste só, sem montar um dublê novo.
+  attr_accessor :code, :body
 
   def initialize(code: '200', body: '{"result":{"status":"ok"}}')
     @code = code

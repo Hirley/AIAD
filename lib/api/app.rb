@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'securerandom'
 
 require_relative '../content_cleaner'
 require_relative '../document_ingestor'
@@ -16,11 +17,18 @@ module Api
   # que uma rota nova nasça protegida mesmo que se esqueça de tratá-la.
   class App
     FORMATS = ContentCleaner::FORMATS.map(&:to_s).freeze
+    AGENT_UNAVAILABLE = 'rota de agente indisponível: configure ANTHROPIC_API_KEY para habilitá-la'
 
-    def initialize(etl:, rag:, collection:)
+    # O agente é opcional: sem modelo de verdade configurado ele não existe, e
+    # a rota diz isso em vez de fingir. O `ExtractiveLlm` não fala o formato
+    # ReAct — montar o agente em cima dele daria seis voltas no laço para
+    # devolver "não cheguei a uma conclusão", que é a pior forma de falhar:
+    # devagar e sem explicar.
+    def initialize(etl:, rag:, collection:, agent: nil)
       @etl = etl
       @rag = rag
       @collection = collection
+      @agent = agent
     end
 
     def call(env)
@@ -43,6 +51,7 @@ module Api
       when %w[POST /documents] then create_document(payload(env))
       when %w[POST /search] then search(payload(env))
       when %w[POST /ask] then ask(payload(env))
+      when %w[POST /agent] then run_agent(payload(env))
       else json(404, error: "rota não encontrada: #{method} #{path}")
       end
     end
@@ -81,6 +90,36 @@ module Api
       json(200, answer: result[:answer], sources: result[:sources],
                 passages: result[:passages].map { |passage| present_passage(passage) },
                 cached: result[:cached], usage: result[:usage])
+    end
+
+    # A sessão identifica a conversa, e é ela que dá memória ao agente. Quando
+    # não vem, uma é criada e devolvida: assim a primeira pergunta não precisa
+    # saber que existe sessão, e a segunda já pode continuar de onde parou.
+    def run_agent(payload)
+      return json(503, error: AGENT_UNAVAILABLE) if @agent.nil?
+
+      missing = missing_fields(payload, %w[question])
+      return missing if missing
+
+      session = presence(payload['session']) || SecureRandom.hex(8)
+
+      present_agent(@agent.ask(session, payload['question']), session)
+    end
+
+    # O trajeto não volta inteiro. As observações são trechos de documento que
+    # o cliente não pediu — mesmo motivo pelo qual o `/ask` não devolve o
+    # prompt. O que volta é o que ajuda a confiar na resposta: quantas voltas
+    # deu, se concluiu e em quais ferramentas se apoiou.
+    def present_agent(result, session)
+      json(200, answer: result[:answer], session: session, iterations: result[:iterations],
+                finished: result[:finished], tools: result[:steps].to_a.filter_map { |step| step[:tool] }.uniq)
+    end
+
+    def presence(value)
+      return nil unless value.is_a?(String)
+
+      stripped = value.strip
+      stripped.empty? ? nil : stripped
     end
 
     def present_hit(hit)

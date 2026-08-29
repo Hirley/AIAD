@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
+require_relative '../anthropic_llm'
 require_relative '../api_key_store'
 require_relative '../bm25_index'
 require_relative '../cached_rag'
+require_relative '../conversation_memory'
+require_relative '../conversation_store'
+require_relative '../conversational_agent'
 require_relative '../embedding_generator'
 require_relative '../etl_pipeline'
 require_relative '../evaluated_rag'
@@ -18,8 +22,11 @@ require_relative '../prometheus_trace_exporter'
 require_relative '../prompt_compressor'
 require_relative '../qdrant_client'
 require_relative '../rag_pipeline'
+require_relative '../react_agent'
 require_relative '../reranker'
+require_relative '../retrieval_tool'
 require_relative '../semantic_cache'
+require_relative '../tool_registry'
 require_relative '../tracer'
 require_relative 'app'
 require_relative 'authentication'
@@ -41,19 +48,37 @@ module Api
   # o seu — o braço BM25 precisaria de um índice compartilhado (ou dos vetores
   # esparsos do próprio Qdrant) para valer em produção.
   def self.build(env: ENV, registry: instrumented_registry, logs: $stdout)
-    collection = collection_for(env)
-    options = retrieval_options(env)
-    lexical_index = Bm25Index.new
-    parent_store = ParentStore.new
-    etl = etl_pipeline(env, lexical_index, parent_store)
-    llm = llm_for(env)
-
-    retriever = retriever_for(etl, lexical_index, parent_store, llm, options)
-    rag = rag_pipeline(retriever, llm, collection, options, registry)
-    app = MetricsEndpoint.new(App.new(etl: etl, rag: rag, collection: collection), registry: registry)
+    app = MetricsEndpoint.new(application_for(env, registry), registry: registry)
 
     observed(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry, logs)
   end
+
+  # A aplicação e os middlewares se montam separados de propósito: aqui é o que
+  # a API **faz**, e no `build` é o que ela **exige** de quem chega. Misturar os
+  # dois foi ficando ilegível conforme a pilha cresceu.
+  def self.application_for(env, registry)
+    collection = collection_for(env)
+    options = retrieval_options(env)
+    llm = llm_for(env)
+    etl, retriever = retrieval_for(env, llm, options)
+
+    App.new(etl: etl, collection: collection,
+            rag: rag_pipeline(retriever, llm, collection, options, registry),
+            agent: agent_for(retriever, collection, registry, env))
+  end
+  private_class_method :application_for
+
+  # O ETL e o recuperador saem juntos porque nascem juntos: os dois índices que
+  # a busca híbrida usa são alimentados por uma única ingestão, e separá-los
+  # aqui só criaria a chance de montar um sem o outro.
+  def self.retrieval_for(env, llm, options)
+    lexical_index = Bm25Index.new
+    parent_store = ParentStore.new
+    etl = etl_pipeline(env, lexical_index, parent_store)
+
+    [etl, retriever_for(etl, lexical_index, parent_store, llm, options)]
+  end
+  private_class_method :retrieval_for
 
   # A ordem da pilha não é acidental. Log e métrica ficam **por fora** da
   # autenticação, para que 401 e 403 apareçam no gráfico e no log: um pico de
@@ -130,6 +155,26 @@ module Api
   end
   private_class_method :rag_pipeline
 
+  # O agente só existe quando há modelo de verdade. O `ExtractiveLlm` recorta
+  # trecho, não escreve "Pensamento / Ação / Resposta Final": montar o ReAct em
+  # cima dele daria seis voltas no laço para devolver "não cheguei a uma
+  # conclusão". `nil` aqui faz a rota responder 503 dizendo o que configurar,
+  # que é uma falha imediata e explicada.
+  #
+  # A memória é por processo, como o índice BM25 e o cache semântico. Vale para
+  # um worker; com mais de um, a conversa dependeria de qual deles atendeu.
+  def self.agent_for(retriever, collection, registry, env)
+    model = AnthropicLlm.from_env(env)
+    return nil if model.nil?
+
+    tools = ToolRegistry.new([RetrievalTool.build(retriever: retriever, collection: collection)])
+    tracer = Tracer.new(exporter: PrometheusTraceExporter.new(registry: registry))
+
+    ConversationalAgent.new(agent: ReactAgent.new(llm: model, tools: tools, tracer: tracer),
+                            memory: ConversationMemory.new(store: ConversationStore.new))
+  end
+  private_class_method :agent_for
+
   def self.etl_pipeline(env, lexical_index, parent_store)
     EtlPipeline.new(
       qdrant: QdrantClient.new(transport: HttpQdrantTransport.from_env(env)),
@@ -146,10 +191,12 @@ module Api
     value.empty? ? DEFAULT_COLLECTION : value
   end
 
-  # Sem modelo configurado a API responde de forma extrativa, recortando o
-  # trecho recuperado em vez de gerar texto.
-  def self.llm_for(_env)
-    ExtractiveLlm.new
+  # Com `ANTHROPIC_API_KEY` no ambiente, o modelo de verdade. Sem ela, a API
+  # continua respondendo de forma extrativa, recortando o trecho recuperado em
+  # vez de gerar texto — que é o que permite rodar a stack inteira sem
+  # credencial de provedor.
+  def self.llm_for(env)
+    AnthropicLlm.from_env(env) || ExtractiveLlm.new
   end
   private_class_method :llm_for
 end
