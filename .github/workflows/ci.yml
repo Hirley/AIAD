@@ -49,6 +49,25 @@ jobs:
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/health)" = "200"
 
+      # O console é o único artefato que não é Ruby, e a imagem é o único lugar
+      # onde ele pode sumir: o RSpec lê a página do disco do repositório, onde
+      # ela sempre está. Um `COPY public` esquecido já derruba o boot, e o
+      # `--wait` acima falharia — mas por acidente, não por intenção. Aqui a
+      # verificação é explícita, e cobre também o caso que o boot não pega:
+      # página servida vazia, ou com o content-type errado.
+      - name: O console é servido pela imagem, sem credencial
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9292/)" = "200"
+          # Cabeçalho em arquivo, e não por pipe: `grep -q` sai no primeiro
+          # casamento e mataria o curl antes de o corpo terminar de ser escrito,
+          # deixando os greps seguintes intermitentes.
+          curl -s -D cabecalho.txt -o pagina.html http://127.0.0.1:9292/
+          grep -qi 'content-type: text/html' cabecalho.txt
+          grep -q '<title>AIAD' pagina.html
+          # A página pede a chave; se ela passar a carregar uma, o CI para aqui.
+          grep -q 'type="password"' pagina.html
+          ! grep -q 'chave-de-ci' pagina.html
+
       # O CI roda sem ANTHROPIC_API_KEY de propósito: nenhuma chave de modelo
       # entra aqui. O que se verifica é a degradação — a rota existe, exige
       # credencial e diz o que falta em vez de dar seis voltas no laço.
