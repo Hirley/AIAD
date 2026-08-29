@@ -25,6 +25,12 @@ services:
       AIAD_API_KEYS: ${AIAD_API_KEYS:?defina AIAD_API_KEYS no .env antes de subir}
       AIAD_COLLECTION: ${AIAD_COLLECTION:-documentos}
       AIAD_TOP_K: ${AIAD_TOP_K:-4}
+      # Tetos do aquecimento do índice léxico, que roda antes de a porta abrir.
+      # Precisam estar aqui, e não só no .env: o contêiner só enxerga o que este
+      # bloco repassa, e documentar uma variável que não chega é pior do que não
+      # documentar nenhuma.
+      AIAD_LEXICAL_INDEX_MAX: ${AIAD_LEXICAL_INDEX_MAX:-50000}
+      AIAD_LEXICAL_INDEX_TIMEOUT: ${AIAD_LEXICAL_INDEX_TIMEOUT:-30}
       # Opcionais: sem a chave, o /ask responde de forma extrativa e o /agent
       # devolve 503 dizendo o que configurar. Vazio conta como ausente.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

@@ -33,7 +33,8 @@ module Api
       qdrant = QdrantClient.new(transport: HttpQdrantTransport.from_env(env))
       etl = etl_pipeline(qdrant, lexical_index, parent_store)
 
-      LexicalIndexWarmup.run(qdrant: qdrant, index: lexical_index, collection: collection, registry: registry)
+      LexicalIndexWarmup.run(qdrant: qdrant, index: lexical_index, collection: collection,
+                             registry: registry, env: env)
 
       { etl: etl, retriever: retriever_for(etl, lexical_index, parent_store, llm, options) }
     end
