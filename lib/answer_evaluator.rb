@@ -11,7 +11,7 @@ require_relative 'stemmer'
 # recuperação trazendo lixo; relevância de resposta baixa é o modelo respondendo
 # outra pergunta.
 #
-# Cinco decisões que definem o comportamento:
+# Sete decisões que definem o comportamento:
 #
 # - **Heurística barata por padrão, juiz injetável.** Mesmo desenho do
 #   `Reranker`: sobreposição de termos roda em toda resposta sem custo e sem
@@ -31,6 +31,25 @@ require_relative 'stemmer'
 #   `RelevanceFloor` depende dela pelo mesmo motivo — e duas listas divergiriam.
 # - **A lista das frases reprovadas sai junto.** O número diz que piorou; a
 #   lista diz o que ler.
+# - **Relevância de contexto é média de sobreposição, não contagem de trechos
+#   que sobrepõem.** A versão contada chamava o trecho de relevante com
+#   sobreposição *maior que zero* — e o `RelevanceFloor`, que roda antes, só
+#   deixa passar trecho a partir de 0,45. Passar no piso implicava passar aqui,
+#   e a nota só conseguia valer 1,0: cinco amostras na stack, cinco vezes 1,0;
+#   dezesseis mil perguntas geradas, um único valor. A métrica que existe para
+#   avisar "a recuperação está trazendo lixo" tinha perdido a capacidade de
+#   avisar, porque quem define lixo é a mesma conta que o piso usou para
+#   manter. A média não desfaz esse parentesco — devolve a informação: piso mal
+#   calibrado mantendo trecho a 0,45 agora aparece como 0,45 no painel.
+# - **Sustentação é sobreposição de vocabulário, e isso tem um limite medido.**
+#   Uma paráfrase correta e uma alucinação podem tirar a mesma nota, porque
+#   nenhuma das duas reaproveita as palavras do trecho. Medido contra o acervo
+#   deste projeto: paráfrase certa tirou 0,11 e alucinação pura tirou 0,17 — as
+#   faixas se **sobrepõem**, e por isso nenhum ajuste de `SUPPORT_THRESHOLD`
+#   resolve. Hoje não dói, porque o `ExtractiveLlm` recorta o trecho em vez de
+#   reescrevê-lo e a resposta é substring literal do contexto. Dói no dia em
+#   que entrar um modelo que parafraseia, e o sintoma será a nota desabando ao
+#   acusar de alucinação resposta correta. A saída é o `judge:`, não o limiar.
 class AnswerEvaluator
   SUPPORT_THRESHOLD = 0.6
   SENTENCE = /(?<=[.!?])\s+/
@@ -78,9 +97,7 @@ class AnswerEvaluator
   def context_relevancy(question, passages)
     return 0.0 if passages.empty?
 
-    related = passages.count { |passage| overlap(question, passage[:text]).positive? }
-
-    related.fdiv(passages.size)
+    passages.sum { |passage| overlap(question, passage[:text]) }.fdiv(passages.size)
   end
 
   def content_terms(text)
