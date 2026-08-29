@@ -158,6 +158,11 @@ jobs:
           # Maior que zero: o documento ingerido antes do restart voltou para o
           # indice sem ninguem reingerir nada.
           test "$(printf '%.0f' "$trechos")" -gt 0
+          # E o acervo INTEIRO voltou, nao so o que coube. Sem esta linha um
+          # indice parcial passaria: bastaria um trecho ter entrado. E o caso
+          # que a contagem sozinha nao enxerga, porque parcial e completo
+          # contam igual quando o acervo tem um documento so.
+          grep -q '^aiad_lexical_index_complete 1$' metricas.txt
 
       # A inversão que vale para qualquer observador: ninguém aceita cair
       # porque quem estava olhando caiu. As chaves aqui são de mentira e a URL
