@@ -35,6 +35,7 @@ services:
       # devolve 503 dizendo o que configurar. Vazio conta como ausente.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AIAD_MODEL: ${AIAD_MODEL:-}
+      AIAD_MODEL_PRICES: ${AIAD_MODEL_PRICES:-}
       AIAD_HISTORY_BUDGET: ${AIAD_HISTORY_BUDGET:-400}
       AIAD_MAX_SESSIONS: ${AIAD_MAX_SESSIONS:-500}
       # Rastreamento no Langfuse, também opcional: sem o par de chaves o trace

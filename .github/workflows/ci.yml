@@ -49,6 +49,22 @@ jobs:
           docker compose config --quiet
           docker compose --profile observabilidade config --quiet
 
+      # O `environment:` do serviço lista as variáveis uma a uma, então
+      # variável nova no código não chega ao contêiner até ser repassada aqui.
+      # Aconteceu com a tabela de preço: o spec provava ambiente -> exportador
+      # -> log, e a stack subia mesmo assim com `models: []`, porque o compose
+      # não passava a variável adiante. Spec cobre o código; isto cobre o
+      # caminho até ele.
+      - name: O compose repassa as variaveis do modelo para o conteiner
+        run: |
+          config=$(docker compose config)
+          for variavel in ANTHROPIC_API_KEY AIAD_MODEL AIAD_MODEL_PRICES; do
+            if ! echo "$config" | grep -q "$variavel"; then
+              echo "o compose nao repassa $variavel para o conteiner" >&2
+              exit 1
+            fi
+          done
+
       - name: Sobe a stack (API + Qdrant)
         run: docker compose up --build --detach --wait --wait-timeout 180
 

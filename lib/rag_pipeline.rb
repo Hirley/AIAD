@@ -15,7 +15,7 @@ require_relative 'tracer'
 class RagPipeline
   DEFAULT_TOP_K = 4
   RERANK_POOL_FACTOR = 4
-  NO_USAGE = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }.freeze
+  NO_USAGE = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, measured: false }.freeze
   NO_CONTEXT_ANSWER = 'Não encontrei essa informação nos documentos indexados.'
 
   def initialize(retriever:, llm:, collection:, prompt_builder: PromptBuilder.new, top_k: DEFAULT_TOP_K,
@@ -74,13 +74,31 @@ class RagPipeline
   # estado só para isso.
   def generate(span, prompt)
     span.span('rag.generate', input: prompt) do |generation|
-      text = @llm.complete(prompt)
-      usage = usage_of(prompt, text)
+      text, usage = text_and_usage(prompt)
       generation.output = text
       generation.usage = usage
 
       [text, usage]
     end
+  end
+
+  # O uso medido pelo provedor ganha do estimado sempre que existe. A pergunta
+  # é por capacidade, não por classe: o `AnthropicLlm` sabe informar, o
+  # `ExtractiveLlm` não sabe e nem teria o que informar, e quem chama não
+  # precisa saber qual é qual.
+  #
+  # `complete_with_usage` pode devolver `nil` no uso quando a resposta veio sem
+  # o bloco de contagem; aí a estimativa volta a valer, e o `measured: false`
+  # diz isso a quem for ler.
+  def text_and_usage(prompt)
+    unless @llm.respond_to?(:complete_with_usage)
+      text = @llm.complete(prompt)
+      return [text, usage_of(prompt, text)]
+    end
+
+    text, usage = @llm.complete_with_usage(prompt)
+
+    [text, usage || usage_of(prompt, text)]
   end
 
   # Com reranker, recupera um pool maior e deixa a reordenação escolher os
@@ -105,12 +123,18 @@ class RagPipeline
     @compressor.compress(passages, budget: @context_budget)
   end
 
+  # `measured: false` viaja junto com o número, e não só na documentação: quem
+  # lê uma conta de dinheiro precisa saber se ela veio do provedor ou da
+  # heurística de ~4 caracteres por token do `TokenCounter`. A chave existe
+  # sempre, com um valor ou outro, porque esquema estável é o que deixa filtrar
+  # sem tratar ausência como caso à parte — mesmo motivo do `reason` na linha
+  # de log da partida.
   def usage_of(prompt, answer)
     prompt_tokens = @counter.estimate(prompt)
     completion_tokens = @counter.estimate(answer)
 
     { prompt_tokens: prompt_tokens, completion_tokens: completion_tokens,
-      total_tokens: prompt_tokens + completion_tokens }
+      total_tokens: prompt_tokens + completion_tokens, measured: false }
   end
 
   def retrieval_limit
