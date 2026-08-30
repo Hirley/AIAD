@@ -27,6 +27,13 @@ Lint/EmptyFile:
   Exclude:
     - "features/support/env.rb"
 
+# Os dubles dos cenarios moram junto do passo que os usa: um transporte que
+# recusa toda chamada, como um Qdrant fora do ar, e um indice que quebra de
+# proposito. Um arquivo para cada seria mais arquivo do que informacao.
+Style/OneClassPerFile:
+  Exclude:
+    - "features/step_definitions/**/*"
+
 # Rack::Test chama `app` como metodo no World do Cucumber; nao da para trocar
 # por attr_reader num arquivo de step definitions.
 Style/TrivialAccessors:

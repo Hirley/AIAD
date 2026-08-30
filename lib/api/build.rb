@@ -43,7 +43,7 @@ module Api
   # O índice léxico vive em memória e é reconstruído do acervo na partida; o
   # que isso resolve, e o que continua em aberto, está no `LexicalIndexWarmup`.
   def self.build(env: ENV, registry: Observability.registry, logs: $stdout)
-    app = Console.new(MetricsEndpoint.new(application_for(env, registry), registry: registry))
+    app = Console.new(MetricsEndpoint.new(application_for(env, registry, logs), registry: registry))
 
     Observability.wrap(Authentication.new(app, store: ApiKeyStore.from_env(env)), registry: registry, logs: logs)
   end
@@ -51,11 +51,16 @@ module Api
   # A aplicação e os middlewares se montam separados de propósito: aqui é o que
   # a API **faz**, e no `build` é o que ela **exige** de quem chega. Misturar os
   # dois foi ficando ilegível conforme a pilha cresceu.
-  def self.application_for(env, registry)
+  #
+  # O `logs` atravessa até aqui porque o aquecimento do índice tem o que dizer
+  # na partida, e o único stream que já existe é o do log de requisição. Um
+  # coletor só, um formato só.
+  def self.application_for(env, registry, logs)
     collection = collection_for(env)
     options = retrieval_options(env)
     llm = llm_for(env)
-    retrieval = Retrieval.build(env: env, llm: llm, options: options, collection: collection, registry: registry)
+    retrieval = Retrieval.build(env: env, llm: llm, options: options, collection: collection,
+                                registry: registry, logs: logs)
     tracer = Observability.tracer(registry: registry, env: env)
 
     App.new(etl: retrieval[:etl], collection: collection,

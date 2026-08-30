@@ -30,12 +30,24 @@ Funcionalidade: O índice léxico se reconstrói do acervo
     Então o índice léxico deve ter 2 trechos
     E o índice deve estar marcado como parcial
 
+  # Métrica serve a quem está olhando um painel, e ninguém olha painel durante
+  # um boot: quem sobe o contêiner e vê a API respondendo 200 lê log. E o par
+  # de métricas diz que o índice ficou pela metade sem dizer **por quê** —
+  # teto de trechos, teto de tempo e acervo inalcançável saem iguais lá.
+  Cenário: A partida diz no log por que o índice ficou parcial
+    Dado que o acervo tem o documento "a.txt" com "férias de trinta dias"
+    E que o acervo tem o documento "b.txt" com "reembolso de viagem"
+    E que o acervo tem o documento "c.txt" com "trabalho remoto híbrido"
+    Quando a API reinicia com teto de 2 trechos
+    Então o log da partida deve dar "max_documents" como motivo
+
   Cenário: Acervo vazio não impede a partida
     Quando a API reinicia com o mesmo acervo
     Então o índice léxico deve ter 0 trechos
     # Zero trecho de um acervo vazio é um índice completo: não falta nada. É o
     # que distingue "não há documento" de "não consegui ler o acervo".
     E o índice deve estar marcado como completo
+    E o log da partida não deve dar motivo nenhum
 
   # A degradação continua existindo quando o Qdrant não responde; o que não
   # pode é ela derrubar o processo.
@@ -47,3 +59,18 @@ Funcionalidade: O índice léxico se reconstrói do acervo
     # Zero e **parcial**, ao contrário do acervo vazio. É o par de métricas que
     # separa "não há documento" de "não consegui ler".
     E o índice deve estar marcado como parcial
+    E o log da partida deve dar "unreachable" como motivo
+
+  # O `rescue StandardError` que existia aqui engolia defeito de programação
+  # junto com Qdrant fora do ar, e os dois saíam idênticos: zero trechos,
+  # índice parcial. O disfarce durava semanas, porque a API responde 200 o
+  # tempo todo e a busca fica com um braço só sem ninguém reparar.
+  #
+  # Agora o esperado degrada e o inesperado derruba a partida — a mesma escolha
+  # que o console já faz quando a página não veio na imagem: falhar na
+  # montagem, e não na primeira visita.
+  Cenário: Defeito de programação na partida não se disfarça de acervo inalcançável
+    Dado que o acervo tem o documento "politica-ferias.txt" com "a política de férias garante trinta dias corridos"
+    Quando a API reinicia com um defeito no índice
+    Então a partida deve ter falhado
+    E o log da partida deve estar vazio

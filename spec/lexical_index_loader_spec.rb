@@ -26,7 +26,7 @@ RSpec.describe LexicalIndexLoader do
     it 'gives back how many chunks it indexed' do
       store('férias de trinta dias', 'reembolso de viagem')
 
-      expect(loader.load).to eq(loaded: 2, complete: true)
+      expect(loader.load).to eq(loaded: 2, complete: true, reason: nil)
     end
 
     it 'fills the index, so the lexical arm searches again' do
@@ -48,13 +48,13 @@ RSpec.describe LexicalIndexLoader do
     it 'walks every page, not just the first' do
       store('um', 'dois', 'três', 'quatro', 'cinco')
 
-      expect(loader.load).to eq(loaded: 5, complete: true)
+      expect(loader.load).to eq(loaded: 5, complete: true, reason: nil)
     end
   end
 
   describe 'quando não há o que carregar' do
     it 'gives back zero for a collection that does not exist' do
-      expect(loader.load).to eq(loaded: 0, complete: true)
+      expect(loader.load).to eq(loaded: 0, complete: true, reason: nil)
     end
 
     it 'leaves the index empty instead of failing the boot' do
@@ -66,7 +66,7 @@ RSpec.describe LexicalIndexLoader do
     it 'gives back zero for an empty collection' do
       qdrant.create_collection(colecao, vector_size: 4)
 
-      expect(loader.load).to eq(loaded: 0, complete: true)
+      expect(loader.load).to eq(loaded: 0, complete: true, reason: nil)
     end
   end
 
@@ -77,7 +77,7 @@ RSpec.describe LexicalIndexLoader do
       qdrant.create_collection(colecao, vector_size: 4)
       qdrant.upsert_points(colecao, [{ id: 1, vector: [0.1, 0.2, 0.3, 0.4], payload: { source: 'vazio.txt' } }])
 
-      expect(loader.load).to eq(loaded: 0, complete: true)
+      expect(loader.load).to eq(loaded: 0, complete: true, reason: nil)
     end
 
     it 'does not put it in the index either' do
@@ -100,13 +100,28 @@ RSpec.describe LexicalIndexLoader do
     it 'stops at the cap instead of walking the whole collection' do
       store('um', 'dois', 'três', 'quatro', 'cinco')
 
-      expect(loader.load).to eq(loaded: 3, complete: false)
+      expect(loader.load).to eq(loaded: 3, complete: false, reason: :max_documents)
     end
 
     it 'says the index is complete when the collection fits under the cap' do
       store('um', 'dois')
 
-      expect(loader.load).to eq(loaded: 2, complete: true)
+      expect(loader.load).to eq(loaded: 2, complete: true, reason: nil)
+    end
+
+    # Os dois tetos podem estourar na mesma página, e aí o motivo teria de ser
+    # escolhido no par ou no ímpar. O de trechos ganha por ser o determinístico:
+    # ele depende do acervo, e vai estourar de novo no próximo boot. O de tempo
+    # depende de como o Qdrant estava naquele minuto.
+    it 'blames the cap, not the clock, when both trip on the same page' do
+      # Prazo já vencido na primeira página **e** teto alcançado nela: se a
+      # ordem das duas conferências se inverter, este exemplo passa a dizer
+      # `:timeout`.
+      loader = described_class.new(qdrant: qdrant, index: index, collection: colecao, page: 3,
+                                   max_documents: 3, timeout: 0)
+      store('um', 'dois', 'três', 'quatro', 'cinco')
+
+      expect(loader.load).to eq(loaded: 3, complete: false, reason: :max_documents)
     end
 
     # Pedir a página cheia quando faltam poucos para o teto carregaria trechos
@@ -137,7 +152,7 @@ RSpec.describe LexicalIndexLoader do
     it 'stops when the deadline passes, keeping what it already indexed' do
       store('um', 'dois', 'três')
 
-      expect(loader.load).to eq(loaded: 1, complete: false)
+      expect(loader.load).to eq(loaded: 1, complete: false, reason: :timeout)
     end
   end
 

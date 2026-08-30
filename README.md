@@ -145,11 +145,31 @@ decide o que fazer quando isso não dá certo:
   sobe" num acervo grande, derrubando readiness probe e pondo o contêiner em loop de reinício. São dois
   tetos — `AIAD_LEXICAL_INDEX_MAX` (50 000 trechos) limita o trabalho, `AIAD_LEXICAL_INDEX_TIMEOUT` (30 s)
   limita a espera com um Qdrant lento. Estourando qualquer um, a API sobe com o índice parcial.
-- **Mas nada disso é silencioso.** Dois medidores contam a história inteira:
+- **Mas nada disso é silencioso.** Dois medidores contam metade da história:
   `aiad_lexical_index_documents` diz quantos trechos entraram, e `aiad_lexical_index_complete` diz se isso
   é o acervo inteiro (`1`) ou só o que coube (`0`). O par é o que separa três situações que o número
   sozinho confunde: acervo vazio (`0` e `1`), acervo que não deu para ler (`0` e `0`) e acervo grande
   demais (`50000` e `0`).
+- **A outra metade sai no log, porque ninguém olha painel durante um boot.** Quem sobe o contêiner e vê a
+  API respondendo 200 lê log — e a métrica não tem como carregar o **motivo** sem virar um rótulo por
+  situação. Sai uma linha por partida, no mesmo stream e no mesmo formato JSON do log de requisição:
+
+  ```json
+  {"ts":"2026-08-29T11:15:05Z","level":"warn","event":"lexical_index_warmup","documents":50000,"complete":false,"reason":"max_documents"}
+  ```
+
+  O `reason` distingue os três motivos de índice parcial — `max_documents`, `timeout` e `unreachable` — e
+  continua na linha mesmo quando é nulo, para `jq` e Loki filtrarem por motivo sem tratar a chave ausente
+  como um caso à parte.
+- **Erro inesperado derruba a partida, e é de propósito.** Aqui houve um `rescue StandardError`, e ele
+  engolia junto o que precisa ser barulhento: um `NoMethodError` no meio da varredura virava
+  `documents 0` com `complete 0`, indistinguível de "o Qdrant não respondeu" — e o disfarce durava, porque
+  a API responde 200 o tempo todo com a busca funcionando pela metade. Hoje só
+  `QdrantClient::RequestError` degrada; o resto sobe e mata o boot com o stack trace na saída, que é a
+  mesma escolha do console quando a página não veio na imagem: falhar na montagem, e não na primeira
+  visita. Não há lista de erro de rede nesse `rescue` porque não chega nenhum — o `HttpQdrantTransport` já
+  converte recusa de conexão, timeout e DNS em `{ ok: false }`, e o `QdrantClient` transforma isso em
+  `RequestError`.
 
 Reconstruir, e não persistir em disco: o acervo é a fonte, e um segundo lugar guardando a mesma verdade
 divergiria no primeiro documento apagado direto no Qdrant.

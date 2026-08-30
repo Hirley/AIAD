@@ -126,8 +126,20 @@ RSpec.describe 'Api.build' do
 
     it 'writes one structured log line per request' do
       get '/health'
+      requisicao = logs.string.lines.map { |linha| JSON.parse(linha) }.find { |linha| linha.key?('path') }
 
-      expect(JSON.parse(logs.string.lines.first)).to include('path' => '/health', 'status' => 200)
+      expect(requisicao).to include('path' => '/health', 'status' => 200)
+    end
+
+    # A linha da partida sai antes de qualquer requisição, no mesmo stream e no
+    # mesmo formato JSON. É o que faz quem sobe o contêiner descobrir com que
+    # índice a API subiu sem ir raspar o `/metrics` de propósito — e ninguém
+    # olha painel durante um boot.
+    it 'writes a boot line for the lexical index warmup, in the same stream' do
+      app
+
+      expect(JSON.parse(logs.string.lines.first))
+        .to include('event' => 'lexical_index_warmup', 'documents' => 0)
     end
 
     it 'answers with the request id, so a log line can be found from a ticket' do
