@@ -6,6 +6,8 @@ Assistente Inteligente de Análise de Documentos.
 
 Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanhamento das tarefas no [board do projeto](https://github.com/users/Hirley/projects/4).
 
+Publicada como gem no GitHub Packages a cada tag de versão: `gem install aiad --source https://rubygems.pkg.github.com/Hirley`.
+
 ## Componentes
 
 | Classe | Responsabilidade |

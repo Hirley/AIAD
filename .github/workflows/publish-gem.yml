@@ -1,0 +1,33 @@
+name: Publish gem
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: false
+
+      - name: Build
+        run: gem build aiad.gemspec
+
+      - name: Configura credenciais do GitHub Packages
+        run: |
+          mkdir -p "$HOME/.gem"
+          printf -- '---\n:github: Bearer %s\n' "${{ secrets.GITHUB_TOKEN }}" > "$HOME/.gem/credentials"
+          chmod 0600 "$HOME/.gem/credentials"
+
+      - name: Publish
+        run: gem push --key github --host https://rubygems.pkg.github.com/Hirley aiad-*.gem
