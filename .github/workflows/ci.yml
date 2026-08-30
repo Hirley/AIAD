@@ -144,6 +144,30 @@ jobs:
           echo "$resposta"
           echo "$resposta" | grep -q 'politica.txt'
 
+      # A pergunta acima foi avaliada, então os histogramas das notas já têm
+      # amostra aqui. O que este passo cobra não é o valor da nota -- que
+      # depende do acervo -- e sim que os cortes publicados sejam os de cada
+      # nota, e não a lista única que valia para as três.
+      #
+      # Os dois cortes que sumiram são o ponto: `le=0.25` na relevância de
+      # contexto nunca recebia amostra, porque o piso não deixa passar trecho
+      # abaixo de 0,45; e `le=0.95` na sustentação exigiria uma resposta de
+      # onze frases para existir, já que a nota é k/n.
+      - name: Cada nota publica os seus próprios cortes
+        run: |
+          metricas=$(curl -sf http://127.0.0.1:9292/metrics -H 'Authorization: Bearer chave-de-ci-metricas')
+          echo "$metricas" | grep -q 'aiad_llm_groundedness_bucket{le="0"}'
+          echo "$metricas" | grep -q 'aiad_llm_context_relevancy_bucket{le="0.45"}'
+          # `if` em vez de `! grep`: o bash ignora o `set -e` quando o retorno
+          # é invertido, então `! grep -q` passaria calado justamente no caso
+          # que este passo existe para pegar.
+          for morto in 'aiad_llm_groundedness_bucket{le="0.95"}' 'aiad_llm_context_relevancy_bucket{le="0.25"}'; do
+            if echo "$metricas" | grep -qF "$morto"; then
+              echo "corte inalcancavel voltou: $morto" >&2
+              exit 1
+            fi
+          done
+
       # Regressão do bug em que a busca vetorial voltava sem payload. Só
       # aparece depois de reiniciar: enquanto o processo vive, o índice BM25 em
       # memória ainda tem o texto e a fusão RRF entrega a origem pelo braço

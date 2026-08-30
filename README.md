@@ -584,6 +584,15 @@ Decisões que valem registrar:
   observações, não uma média achatada.
 - **Pergunta sem contexto não é chamada de modelo.** O pipeline responde sem chamar o modelo; contar
   isso afundaria o custo médio por chamada e mentiria sobre quantas vezes o modelo foi acionado.
+- **Cada nota tem a sua lista de baldes.** Era uma só para as três, com os cortes apertados perto de 1
+  porque "a diferença entre 0,95 e 1,0 é a que importa". O problema não era o gosto, era a aritmética: as
+  três notas são razões de inteiros pequenos — `k/n` com `n` = frases da resposta, `k/|Q|` com `|Q|` =
+  termos de conteúdo da pergunta —, então para uma nota cair entre 0,9 e 1,0 é preciso denominador ≥ 11.
+  As respostas daqui têm de uma a quatro frases, e aqueles cortes pediam resolução onde não existe valor
+  nenhum. Hoje a sustentação corta em 0,0, para a corcova do "nada se sustentou" não dividir balde com
+  "uma frase de quatro se sustentou" — são diagnósticos diferentes. E a relevância de contexto começa no
+  próprio `RelevanceFloor::DEFAULT_MINIMUM`: nenhum trecho abaixo do piso chega à avaliação, então corte
+  abaixo dele nasce morto, e amarrar a constante faz o histograma seguir o piso se ele mudar.
 - **Pergunta e resposta nunca viram métrica.** Texto de usuário como rótulo é cardinalidade infinita — e
   o conteúdo acabaria guardado para sempre num sistema que ninguém trata como base de dados pessoais. O
   texto fica no log.
@@ -645,10 +654,22 @@ painéis já provisionados:
 | Painel | Para quem olha |
 | --- | --- |
 | **AIAD — Infraestrutura e API** | Throughput, latência p95 e p99, memória, CPU, requisições em andamento, recusas de credencial e o log ao vivo |
-| **AIAD — LLM: custo e qualidade** | Custo por pergunta, tokens por minuto, as três notas ao longo do tempo, latência do modelo e frases sem apoio |
+| **AIAD — LLM: custo e qualidade** | Custo por pergunta, tokens por minuto, as três notas ao longo do tempo, o tamanho de cada corcova da sustentação, latência do modelo e frases sem apoio |
 
 Decisões que valem registrar:
 
+- **Um painel lê os baldes, e não só a média.** Os três histogramas de nota existiam desde o começo e
+  nenhum painel os consultava — as três apareciam como `_sum/_count`, que é precisamente a média que o
+  histograma foi criado para não ser. Noventa respostas perfeitas e dez inventadas dão 0,9, e 0,9 parece
+  ótimo. O painel da sustentação lê `le="0"` e o topo da distribuição, e mostra o tamanho de cada
+  corcova; a linha do "nada se sustentou" é a que se leva para uma conversa sobre risco.
+- **Sem pergunta na janela, a linha some — não cai a zero.** As consultas das notas dividiam por
+  `clamp_min(sum(rate(..._count[30m])), 0.0001)`, e esse clamp troca "não houve amostra" por "a nota foi
+  zero": no painel, silêncio virava colapso de qualidade, que é justamente o alarme. Sem ele, `0/0` dá
+  `NaN` e o Grafana desenha lacuna, que é a leitura verdadeira. Medido contra a stack: com tráfego na
+  janela as duas consultas da sustentação dão 0 e 1; sem tráfego, `NaN` nas duas. O clamp continua onde o
+  denominador é contador cumulativo — `Custo por pergunta` e `Sustentação média` —, porque ali ele só age
+  antes da primeira resposta existir, e não depois de o tráfego parar.
 - **Fontes de dados e painéis são provisionados por arquivo, não clicados na interface.** Painel que só
   existe no banco do Grafana morre com o volume, e ninguém consegue revisar num pull request o que foi
   configurado.
