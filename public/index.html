@@ -35,6 +35,10 @@
   header h1 { font-size: 15px; margin: 0; font-weight: 620; letter-spacing: .01em; }
   header h1 span { color: var(--fraco); font-weight: 400; }
   .chave { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .chave button {
+    background: none; border: 0; padding: 0; color: var(--fraco);
+    font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer;
+  }
   .saude { font-size: 12px; color: var(--fraco); font-family: var(--mono); }
   main { max-width: 860px; margin: 0 auto; padding: 20px; }
   nav { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--borda); }
@@ -91,6 +95,10 @@
   <div class="chave">
     <label for="chave" style="margin:0">chave</label>
     <input type="password" id="chave" placeholder="Bearer…" autocomplete="off" spellcheck="false">
+    <!-- O campo se esvazia ao perder o foco, e a chave passa a viver só na
+         variável do script. Este botão é o que diz que ela ainda está lá, e o
+         único jeito de tirá-la de lá sem recarregar a página. -->
+    <button type="button" id="esquecer" hidden>esquecer</button>
   </div>
 </header>
 
@@ -170,15 +178,37 @@
 
   const $ = (id) => document.getElementById(id);
   const campoChave = $('chave');
+  const botaoEsquecer = $('esquecer');
 
-  // A chave fica na aba, não no disco: sessionStorage some quando a aba fecha,
-  // enquanto localStorage sobreviveria à sessão inteira do navegador. Nada
-  // dela vai para o HTML servido — quem a digita é quem a tem.
-  const GUARDA = 'aiad.chave';
-  try { campoChave.value = sessionStorage.getItem(GUARDA) || ''; } catch (e) { /* aba privada */ }
-  campoChave.addEventListener('input', () => {
-    try { sessionStorage.setItem(GUARDA, campoChave.value); } catch (e) { /* idem */ }
-  });
+  // A chave vive nesta variável e em nenhum outro lugar.
+  //
+  // Aqui esteve `sessionStorage`, e o README chamava isso de cuidado porque ele
+  // some quando a aba fecha. A comparação certa não era com `localStorage`, era
+  // com memória pura: `sessionStorage` sobrevive ao reload e é legível por
+  // **qualquer** script desta origem — a mesma origem que serve o conteúdo dos
+  // documentos que alguém ingeriu. Hoje todo ponto de interpolação passa pelo
+  // `escapar()` e não há como injetar script aqui; no dia em que um campo novo
+  // escapar dessa regra, o defeito para no XSS em vez de virar roubo de
+  // credencial.
+  //
+  // O campo se esvazia ao perder o foco pelo mesmo motivo, e não por capricho:
+  // `input.value` também é legível por qualquer script da origem, então deixar
+  // a chave ali desfaria metade do que a variável ganhou.
+  //
+  // O preço é redigitar a chave a cada reload, e é preço mesmo. A alternativa
+  // que não o cobra não é guardar melhor, é guardar menos — uma sessão curta
+  // emitida pela API em troca da chave —, e essa não se paga num console de
+  // desenvolvimento.
+  let chave = '';
+
+  const marcarChave = () => {
+    campoChave.placeholder = chave ? 'chave na memória' : 'Bearer…';
+    botaoEsquecer.hidden = !chave;
+  };
+
+  campoChave.addEventListener('input', () => { chave = campoChave.value.trim(); marcarChave(); });
+  campoChave.addEventListener('blur', () => { campoChave.value = ''; marcarChave(); });
+  botaoEsquecer.addEventListener('click', () => { chave = ''; campoChave.value = ''; marcarChave(); });
 
   const abas = ['perguntar', 'buscar', 'ingerir'];
   abas.forEach((nome) => {
@@ -197,7 +227,6 @@
   const pontuacao = (valor) => (typeof valor === 'number' ? valor.toFixed(5) : '—');
 
   async function chamar(rota, corpo) {
-    const chave = campoChave.value.trim();
     if (!chave) throw new Error('Informe a chave de API no topo da página.');
 
     const resposta = await fetch(rota, {

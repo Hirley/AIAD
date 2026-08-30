@@ -352,10 +352,16 @@ Três decisões, todas com uma alternativa que parecia mais fácil:
   uma página servida de outro lugar não conseguiria falar com esta API — o header `Authorization` dispara
   preflight. Liberar `Access-Control-Allow-Origin` resolveria, e seria afrouxar a API para ganhar
   conveniência de desenvolvimento.
-- **A página não carrega chave nenhuma.** Ela pede a chave a quem abriu e guarda em `sessionStorage`, que
-  some quando a aba fecha. Embutir a chave no HTML servido publicaria, para quem abrisse a porta 9292, a
-  credencial que a porta existe para exigir. Um cenário Cucumber cobra isso: o corpo da resposta não pode
-  conter nenhuma das chaves configuradas.
+- **A página não carrega chave nenhuma, e também não guarda a que recebe.** Ela pede a chave a quem abriu
+  e a mantém numa variável do próprio script: some no reload, e o campo se esvazia ao perder o foco.
+  Embutir a chave no HTML servido publicaria, para quem abrisse a porta 9292, a credencial que a porta
+  existe para exigir. Aqui esteve `sessionStorage`, e este README o descrevia como cuidado por ele sumir
+  quando a aba fecha — a comparação certa não era com `localStorage`, era com memória pura:
+  `sessionStorage` sobrevive ao reload e é legível por **qualquer** script desta origem, que é a mesma que
+  serve o conteúdo dos documentos ingeridos. O preço do conserto é redigitar a chave a cada reload. Um
+  cenário Cucumber cobra a propriedade: a página não chama armazenamento de navegador nenhum. O que estava
+  lá antes — o corpo da resposta não conter as chaves configuradas — só falharia se alguém as escrevesse
+  na página de propósito.
 - **Pública por declaração, não por posição na pilha.** O `Api::Console` fica **dentro** da autenticação,
   e é o `AccessPolicy` que diz que `GET /` é público, do mesmo jeito que diz do `/health`. Pô-lo por fora
   do middleware também funcionaria — e furaria a regra da casa, que é rota nova nascer protegida e só

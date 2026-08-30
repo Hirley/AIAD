@@ -15,11 +15,20 @@ Funcionalidade: Console web servido pela própria API
     Então a resposta deve ter status 200
     E a página servida deve ser HTML
 
-  # O que separa "página que pede a chave" de "página que vaza a chave".
-  Cenário: A página não carrega nenhuma das chaves configuradas
+  # Aqui esteve um cenário que conferia que o corpo servido não continha as
+  # chaves configuradas. Nada no caminho do código poderia pô-las ali: ele só
+  # falharia se alguém as escrevesse na página de propósito. Tinha a aparência
+  # de uma garantia de segurança sem ser uma.
+  #
+  # A propriedade que interessa é a de baixo, e ela é sobre o que a página faz
+  # com a chave que **recebe**: não deixar cópia onde outro script desta origem
+  # alcance — a mesma origem que serve o conteúdo dos documentos ingeridos.
+  # Sem navegador, o que a suíte alcança é afirmar isso sobre o artefato
+  # servido: nenhuma chamada a armazenamento do navegador sai daqui. É menos
+  # que medir o disco depois de usar, e é o que dá para cobrar a cada push.
+  Cenário: A página não tem onde guardar a chave fora da memória
     Quando eu chamo "GET" em "/" sem credencial
-    Então a página servida não deve conter a chave "chave-total"
-    E a página servida não deve conter a chave "chave-leitura"
+    Então a página servida não deve usar armazenamento do navegador
 
   Cenário: A página pede a chave a quem abriu
     Quando eu chamo "GET" em "/" sem credencial

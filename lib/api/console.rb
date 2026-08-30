@@ -20,9 +20,12 @@ module Api
   #   middleware também funcionaria, e é justamente o que não se quer: a regra
   #   da casa é que rota nova nasce protegida e só fica pública se alguém
   #   escrever isso no lugar onde se procura por essa informação.
-  # - **A página não carrega chave nenhuma.** Ela pede a chave a quem abriu e a
-  #   guarda só na aba. Embutir a chave no HTML servido publicaria, para quem
-  #   abrisse a porta 9292, a credencial que a porta existe para exigir.
+  # - **A página não carrega chave nenhuma, e não guarda a que recebe.** Ela
+  #   pede a chave a quem abriu e a mantém numa variável do próprio script, que
+  #   some no reload. Embutir a chave no HTML servido publicaria, para quem
+  #   abrisse a porta 9292, a credencial que a porta existe para exigir — e
+  #   guardá-la no navegador a deixaria legível por qualquer script desta
+  #   origem, que é a mesma que serve o conteúdo dos documentos ingeridos.
   class Console
     PATH = '/'
     CONTENT_TYPE = 'text/html; charset=utf-8'

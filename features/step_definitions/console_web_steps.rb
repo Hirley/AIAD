@@ -31,8 +31,27 @@ Então('a página servida deve ser HTML') do
   expect(last_response.body).to include('<!doctype html>')
 end
 
-Então('a página servida não deve conter a chave {string}') do |key|
-  expect(last_response.body).not_to include(key)
+# As quatro maneiras de uma página guardar texto onde outro script da mesma
+# origem consegue lê-lo. A lista é do que **não** pode aparecer: a chave vive
+# numa variável do script do console e em nenhum outro lugar.
+ARMAZENAMENTO_DO_NAVEGADOR = %w[sessionStorage localStorage indexedDB document.cookie].freeze
+
+# O que se cobra é o que a página **executa**. Um comentário que cita
+# `sessionStorage` para contar por que ele saiu dali não é uso, e um teste que
+# não distinguisse os dois estaria pedindo para o próximo comentário ser pior —
+# a decisão some do lugar onde ela é lida, para o teste ficar quieto.
+#
+# `//` só conta como comentário no começo da linha: dentro de string ele é
+# `http://`, e apagar até o fim da linha ali cortaria código de verdade.
+def codigo_executavel(pagina)
+  pagina.gsub(/<!--.*?-->/m, '').gsub(%r{/\*.*?\*/}m, '').gsub(%r{^\s*//.*$}, '')
+end
+
+Então('a página servida não deve usar armazenamento do navegador') do
+  codigo = codigo_executavel(last_response.body)
+  usados = ARMAZENAMENTO_DO_NAVEGADOR.select { |api| codigo.include?(api) }
+
+  expect(usados).to be_empty, "a página servida chama #{usados.join(', ')}"
 end
 
 Então('a página servida deve ter um campo de senha para a chave') do
