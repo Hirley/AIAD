@@ -6,7 +6,7 @@ Assistente Inteligente de Análise de Documentos.
 
 Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanhamento das tarefas no [board do projeto](https://github.com/users/Hirley/projects/4).
 
-Publicada como gem no GitHub Packages a cada tag de versão: `gem install aiad --source https://rubygems.pkg.github.com/Hirley`.
+O nome `aiad` é publicado no GitHub Packages a cada tag de versão (`gem install aiad --source https://rubygems.pkg.github.com/Hirley`), mas o pacote carrega só o nome e a versão: as classes do projeto moram soltas em `lib/`, sem namespace, e embarcá-las poria `tool.rb`, `tracer.rb` e companhia no load path de quem instalasse. A aplicação continua sendo rodada por Docker — ver [Setup](#setup).
 
 ## Componentes
 

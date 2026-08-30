@@ -20,14 +20,36 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: false
 
+      # A tag é o gatilho, mas quem decide o nome do arquivo é o
+      # `lib/aiad/version.rb`. Sem esta conferência, `git push origin v0.2.0`
+      # constrói e empurra `aiad-0.1.0.gem`: ou o registry recusa por duplicata,
+      # numa falha que não se parece com a causa, ou a tag passa a mentir sobre
+      # o que está publicado. Falhar aqui é gratuito; descobrir depois é
+      # desfazer uma versão já baixada por alguém.
+      - name: A tag e a versão da gem dizem a mesma coisa
+        run: |
+          versao="$(ruby -Ilib -raiad/version -e 'print Aiad::VERSION')"
+          if [ "v$versao" != "$GITHUB_REF_NAME" ]; then
+            echo "A tag é $GITHUB_REF_NAME e lib/aiad/version.rb diz $versao." >&2
+            exit 1
+          fi
+
       - name: Build
         run: gem build aiad.gemspec
 
+      # O token entra por `env`, e não interpolado no corpo do `run`: o que
+      # `${{ }}` faz é costurar o segredo no texto do script que o runner
+      # escreve em disco. O valor é mascarado no log de qualquer jeito, mas o
+      # arquivo de script não precisa nem chegar a contê-lo.
       - name: Configura credenciais do GitHub Packages
+        env:
+          GEM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p "$HOME/.gem"
-          printf -- '---\n:github: Bearer %s\n' "${{ secrets.GITHUB_TOKEN }}" > "$HOME/.gem/credentials"
+          printf -- '---\n:github: Bearer %s\n' "$GEM_TOKEN" > "$HOME/.gem/credentials"
           chmod 0600 "$HOME/.gem/credentials"
 
+      # Nome exato em vez de `aiad-*.gem`: a conferência acima já garante qual
+      # é, e um glob publicaria o que estivesse sobrando no diretório.
       - name: Publish
-        run: gem push --key github --host https://rubygems.pkg.github.com/Hirley aiad-*.gem
+        run: gem push --key github --host https://rubygems.pkg.github.com/Hirley "aiad-${GITHUB_REF_NAME#v}.gem"
