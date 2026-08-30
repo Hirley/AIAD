@@ -130,17 +130,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(aiad_llm_groundedness_sum[30m])) / clamp_min(sum(rate(aiad_llm_groundedness_count[30m])), 0.0001)",
+          "expr": "sum(rate(aiad_llm_groundedness_sum[30m])) / sum(rate(aiad_llm_groundedness_count[30m]))",
           "legendFormat": "sustentação"
         },
         {
           "refId": "B",
-          "expr": "sum(rate(aiad_llm_answer_relevancy_sum[30m])) / clamp_min(sum(rate(aiad_llm_answer_relevancy_count[30m])), 0.0001)",
+          "expr": "sum(rate(aiad_llm_answer_relevancy_sum[30m])) / sum(rate(aiad_llm_answer_relevancy_count[30m]))",
           "legendFormat": "relevância da resposta"
         },
         {
           "refId": "C",
-          "expr": "sum(rate(aiad_llm_context_relevancy_sum[30m])) / clamp_min(sum(rate(aiad_llm_context_relevancy_count[30m])), 0.0001)",
+          "expr": "sum(rate(aiad_llm_context_relevancy_sum[30m])) / sum(rate(aiad_llm_context_relevancy_count[30m]))",
           "legendFormat": "relevância do contexto"
         }
       ]
@@ -149,7 +149,7 @@
       "id": 9,
       "type": "timeseries",
       "title": "Sustentação: o tamanho de cada corcova",
-      "description": "A sustentação é léxica e sai bimodal: resposta extrativa tira 1,0 e paráfrase correta tira 0,0, sem meio-termo. A média entre as duas corcovas não descreve nenhuma das duas — noventa respostas perfeitas e dez inventadas dão 0,9, que parece ótimo. Este painel lê os baldes em vez do _sum: a linha de baixo é a fração de respostas em que nada se sustentou, e é ela que se leva para uma conversa sobre risco.",
+      "description": "A sustentação é léxica e sai bimodal: resposta extrativa tira 1,0 e paráfrase correta tira 0,0, sem meio-termo. A média entre as duas corcovas não descreve nenhuma das duas — noventa respostas perfeitas e dez inventadas dão 0,9, que parece ótimo. Este painel lê os baldes em vez do _sum: a linha de baixo é a fração de respostas em que nada se sustentou, e é ela que se leva para uma conversa sobre risco. Sem pergunta na janela, as linhas somem em vez de cair a zero — zero aqui significaria \"nada se sustentou\", que é o alarme, e silêncio não pode se disfarçar de alarme.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
       "fieldConfig": {
@@ -159,12 +159,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(aiad_llm_groundedness_bucket{le=\"0\"}[30m])) / clamp_min(sum(rate(aiad_llm_groundedness_count[30m])), 0.0001)",
+          "expr": "sum(rate(aiad_llm_groundedness_bucket{le=\"0\"}[30m])) / sum(rate(aiad_llm_groundedness_count[30m]))",
           "legendFormat": "nada se sustentou"
         },
         {
           "refId": "B",
-          "expr": "(sum(rate(aiad_llm_groundedness_count[30m])) - sum(rate(aiad_llm_groundedness_bucket{le=\"0.9\"}[30m]))) / clamp_min(sum(rate(aiad_llm_groundedness_count[30m])), 0.0001)",
+          "expr": "(sum(rate(aiad_llm_groundedness_count[30m])) - sum(rate(aiad_llm_groundedness_bucket{le=\"0.9\"}[30m]))) / sum(rate(aiad_llm_groundedness_count[30m]))",
           "legendFormat": "tudo se sustentou"
         }
       ]

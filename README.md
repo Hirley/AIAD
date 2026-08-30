@@ -663,6 +663,13 @@ Decisões que valem registrar:
   histograma foi criado para não ser. Noventa respostas perfeitas e dez inventadas dão 0,9, e 0,9 parece
   ótimo. O painel da sustentação lê `le="0"` e o topo da distribuição, e mostra o tamanho de cada
   corcova; a linha do "nada se sustentou" é a que se leva para uma conversa sobre risco.
+- **Sem pergunta na janela, a linha some — não cai a zero.** As consultas das notas dividiam por
+  `clamp_min(sum(rate(..._count[30m])), 0.0001)`, e esse clamp troca "não houve amostra" por "a nota foi
+  zero": no painel, silêncio virava colapso de qualidade, que é justamente o alarme. Sem ele, `0/0` dá
+  `NaN` e o Grafana desenha lacuna, que é a leitura verdadeira. Medido contra a stack: com tráfego na
+  janela as duas consultas da sustentação dão 0 e 1; sem tráfego, `NaN` nas duas. O clamp continua onde o
+  denominador é contador cumulativo — `Custo por pergunta` e `Sustentação média` —, porque ali ele só age
+  antes da primeira resposta existir, e não depois de o tráfego parar.
 - **Fontes de dados e painéis são provisionados por arquivo, não clicados na interface.** Painel que só
   existe no banco do Grafana morre com o volume, e ninguém consegue revisar num pull request o que foi
   configurado.
