@@ -10,14 +10,15 @@ Gem::Specification.new do |spec|
 
   spec.summary     = 'Assistente Inteligente de Análise de Documentos.'
   spec.description = 'API de RAG sobre um acervo de documentos: recuperação híbrida, agentes, ' \
-                      'avaliação de qualidade e observabilidade.'
+                     'avaliação de qualidade e observabilidade.'
   spec.homepage    = 'https://github.com/Hirley/AIAD'
   spec.license     = 'MIT'
   spec.required_ruby_version = '>= 3.1'
 
-  spec.metadata['homepage_uri']      = spec.homepage
-  spec.metadata['source_code_uri']   = spec.homepage
-  spec.metadata['allowed_push_host'] = 'https://rubygems.pkg.github.com/Hirley'
+  spec.metadata['homepage_uri']          = spec.homepage
+  spec.metadata['source_code_uri']       = spec.homepage
+  spec.metadata['allowed_push_host']     = 'https://rubygems.pkg.github.com/Hirley'
+  spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files         = `git ls-files -z lib config.ru`.split("\x0")
   spec.require_paths = ['lib']
