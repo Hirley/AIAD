@@ -46,3 +46,49 @@ RSpec.describe UsageMeter do
     end
   end
 end
+
+# O preço nunca chegava ao exportador: o `Api::Observability` montava o
+# `PrometheusTraceExporter` sem `prices:`, e o custo saía zero mesmo com o
+# modelo cobrando. A tabela agora vem do ambiente, e a leitura dela mora aqui,
+# junto com a conta que a usa.
+RSpec.describe UsageMeter, '.prices_from_env' do
+  it 'reads a price table in dollars per million tokens' do
+    prices = described_class.prices_from_env({ 'AIAD_MODEL_PRICES' => 'claude-sonnet-5:3:15' })
+
+    expect(prices).to eq('claude-sonnet-5' => { input: 3.0, output: 15.0 })
+  end
+
+  it 'reads more than one model, separated like the api keys are' do
+    prices = described_class.prices_from_env({ 'AIAD_MODEL_PRICES' => 'forte:3:15;barato:0.8:4' })
+
+    expect(prices.keys).to contain_exactly('forte', 'barato')
+  end
+
+  # Sem configuração o custo é zero explícito, e quem avisa que isso está
+  # acontecendo é a linha de partida do `Api::Observability`, não uma tabela
+  # embutida que envelheceria em silêncio.
+  it 'is empty when nothing is configured, instead of guessing a price' do
+    expect(described_class.prices_from_env({})).to be_empty
+  end
+
+  # Configuração errada derruba a partida, como a linha de chaves do
+  # ApiKeyStore: preço é configuração, e surpreender quem pergunta é pior do
+  # que não subir.
+  it 'refuses a price that is not a number' do
+    expect { described_class.prices_from_env({ 'AIAD_MODEL_PRICES' => 'forte:tres:15' }) }
+      .to raise_error(described_class::ConfigurationError, /não numérico/)
+  end
+
+  it 'refuses an entry with a missing price' do
+    expect { described_class.prices_from_env({ 'AIAD_MODEL_PRICES' => 'forte:3' }) }
+      .to raise_error(described_class::ConfigurationError, /faltando/)
+  end
+
+  # A conta que já existia passa a receber a tabela lida do ambiente, e é este
+  # o caminho inteiro que estava roto: ambiente -> tabela -> custo.
+  it 'feeds the cost calculation it already knew how to do' do
+    prices = described_class.prices_from_env({ 'AIAD_MODEL_PRICES' => 'forte:3:15' })
+
+    expect(described_class.cost_of(prices, 'forte', 1_000_000, 1_000_000)).to eq(18.0)
+  end
+end

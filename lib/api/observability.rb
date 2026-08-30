@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require 'json'
+require 'time'
+
 require_relative '../composite_exporter'
 require_relative '../langfuse_exporter'
 require_relative '../metric_registry'
@@ -7,6 +10,7 @@ require_relative '../process_collector'
 require_relative '../prometheus_evaluation_log'
 require_relative '../prometheus_trace_exporter'
 require_relative '../tracer'
+require_relative '../usage_meter'
 require_relative 'instrumentation'
 require_relative 'request_logger'
 
@@ -35,10 +39,37 @@ module Api
     # a requisição inteira e diz por quê — qual pergunta, qual resposta, qual
     # span demorou. Sem chave do Langfuse sobra só o Prometheus, e a aplicação
     # sobe igual: observabilidade externa é opcional, não requisito de boot.
-    def self.tracer(registry:, env: ENV)
-      Tracer.new(exporter: CompositeExporter.for(PrometheusTraceExporter.new(registry: registry),
+    #
+    # O preço entra aqui porque é aqui que o exportador nasce. Sem ele o
+    # `aiad_llm_cost_usd_total` fica em zero com o modelo cobrando -- e zero
+    # num painel de custo lê-se como "saiu de graça", não como "ninguém
+    # configurou". Por isso a partida também **diz** em que pé está o preço,
+    # em vez de deixar a métrica falar sozinha.
+    def self.tracer(registry:, env: ENV, logs: $stdout)
+      prices = UsageMeter.prices_from_env(env)
+      report_prices(logs, env, prices)
+
+      Tracer.new(exporter: CompositeExporter.for(PrometheusTraceExporter.new(registry: registry, prices: prices),
                                                  LangfuseExporter.from_env(env)))
     end
+
+    # Só sai linha quando há modelo de verdade configurado. Sem
+    # `ANTHROPIC_API_KEY` o custo é zero porque não houve custo, e isso não é
+    # disfarce nenhum -- avisar ali seria ruído em toda partida de quem roda a
+    # stack extrativa, que é o padrão do projeto.
+    def self.report_prices(logs, env, prices)
+      return if env['ANTHROPIC_API_KEY'].to_s.strip.empty?
+
+      logs.sync = true if logs.respond_to?(:sync=)
+      logs.write("#{JSON.generate(prices_entry(prices))}\n")
+    end
+    private_class_method :report_prices
+
+    def self.prices_entry(prices)
+      { ts: Time.now.utc.iso8601, level: prices.empty? ? 'warn' : 'info', event: 'model_prices',
+        models: prices.keys.sort }
+    end
+    private_class_method :prices_entry
 
     # A ordem da pilha não é acidental. Log e métrica ficam **por fora** da
     # autenticação, para que 401 e 403 apareçam no gráfico e no log: um pico de
