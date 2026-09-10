@@ -88,7 +88,7 @@ qualquer escopo. O critério é o que sobra depois de tirar o que só o não-obj
 | `PromptCompressor` | Encaixa o contexto num orçamento de tokens |
 | `SemanticCache` | Cache por similaridade de embedding |
 | `CachedRag` | Decorador de cache na frente do RAG, um por filtro |
-| `ModelRouter` | Roteia a pergunta entre modelo barato e modelo forte |
+| `ModelRouter` | Roteia a pergunta entre modelo barato e modelo forte — classe pronta e testada, **fora da pilha da API** ([#37](https://github.com/Hirley/AIAD/issues/37)) |
 | `Tool` | Ferramenta do agente: nome, descrição, parâmetros e validação estrita dos argumentos |
 | `ToolRegistry` | Catálogo de ferramentas do prompt e despacho da chamada, com erro virando observação |
 | `RetrievalTool` | Liga o agente ao acervo: recebe um termo, devolve trechos com a origem |
@@ -261,7 +261,7 @@ por fora, HyDE por fora de tudo.
 | Contagem de tokens | `TokenCounter`, `UsageMeter` | sempre |
 | Compressão de contexto | `PromptCompressor` | `AIAD_CONTEXT_BUDGET` (1500) |
 | Cache semântico | `SemanticCache`, `CachedRag` | ligado (`AIAD_CACHE`) |
-| Roteamento de modelos | `ModelRouter` | disponível, não usado sem modelo real |
+| Roteamento de modelos | `ModelRouter` | **não montado** — o `Api.llm_for` devolve um modelo só ([#37](https://github.com/Hirley/AIAD/issues/37)) |
 
 Toda resposta de `/ask` traz `usage` (tokens de prompt e de geração) e `cached`.
 
@@ -282,7 +282,13 @@ Toda resposta de `/ask` traz `usage` (tokens de prompt e de geração) e `cached
   depois, a próxima pergunta precisa tentar de novo.
 - **Roteamento** manda pergunta simples para o modelo barato e analítica para o forte, expondo
   `complete(prompt)` como qualquer modelo. Na dúvida escolhe o forte: errar para o lado caro custa
-  dinheiro, para o lado barato custa uma resposta ruim.
+  dinheiro, para o lado barato custa uma resposta ruim. **A classe existe e é testada, mas não está no
+  caminho da pergunta:** o `Api.llm_for` monta um modelo só. Ligá-la esbarra em três acoplamentos com a
+  observabilidade — o rótulo do modelo é lido antes da chamada e cairia em `unknown`, o
+  `complete_with_usage` não é repassado e os tokens voltariam a ser estimativa, e o `last_choice` é
+  estado de instância num processo com cinco threads. Escrever os três é fácil; **conferir se ficaram
+  certos exige dois modelos reais respondendo**, e por isso a ligação anda junto com a
+  [#26](https://github.com/Hirley/AIAD/issues/26).
 
 ### Otimização da busca vetorial
 

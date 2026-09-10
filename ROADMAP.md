@@ -56,7 +56,7 @@ Acompanhamento das tarefas no board: https://github.com/users/Hirley/projects/4
 > - **Tokens** (`lib/token_counter.rb`, `lib/usage_meter.rb`): estimativa por resposta e acumulado de tokens e custo por modelo.
 > - **Prompt compression** (`lib/prompt_compressor.rb`): normaliza, deduplica e corta o contexto até caber no orçamento.
 > - **Cache semântico** (`lib/semantic_cache.rb`, `lib/cached_rag.rb`): reaproveita resposta de pergunta reformulada, com um cache por filtro de metadados.
-> - **Model routing** (`lib/model_router.rb`): pergunta simples para o modelo barato, analítica para o forte. **A classe existe e é testada, mas não está no caminho da pergunta** — o `Api.llm_for` monta um modelo só. Ligá-la depende de resolver três acoplamentos com a observabilidade; a decisão está na [#37](https://github.com/Hirley/AIAD/issues/37).
+> - **Model routing** (`lib/model_router.rb`): pergunta simples para o modelo barato, analítica para o forte. **A classe existe e é testada, mas não está no caminho da pergunta** — o `Api.llm_for` monta um modelo só. Ligá-la depende de resolver três acoplamentos com a observabilidade, e conferir se ficaram certos exige dois modelos reais respondendo — por isso anda junto com a [#26](https://github.com/Hirley/AIAD/issues/26).
 >
 > Fora da trilha, para tornar tudo isso utilizável: **API HTTP com controle de acesso** (chave por escopo, `lib/api/`) e **deploy em Docker** (API + Qdrant no compose), com o CI subindo a stack e testando o fluxo real.
 
