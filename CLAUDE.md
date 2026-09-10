@@ -30,6 +30,13 @@ Status/Priority/Size) são a fonte do que fazer a seguir. Uma issue bem escrita 
 design tomada (ver #19, #22, #23 como exemplos de issue com investigação anexada) — leia a issue inteira,
 incluindo a seção "Onde já está registrado", antes de propor outra coisa.
 
+Antes de **abrir** issue, leia [Objetivos e não-objetivos](README.md#objetivos-e-não-objetivos) no README.
+Deploy público, multi-tenant, ciclo de vida de credencial, alta disponibilidade e acervo como dado sensível
+estão fora do escopo por decisão escrita, e proposta que só faz sentido sob um deles fecha como `wontfix`
+apontando para lá. O critério não é "encosta num não-objetivo", é **o que sobra depois de tirar o que só o
+não-objetivo justificava** — costuma sobrar documentação enganosa ou teste que finge cobrir algo, e essa
+parte vale sob qualquer escopo.
+
 ## 2–3. TDD/BDD — vermelho, depois verde
 
 Duas suítes, duas granularidades, nenhuma substitui a outra:
