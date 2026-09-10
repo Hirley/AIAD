@@ -8,6 +8,55 @@ Veja a trilha de aprendizagem completa em [ROADMAP.md](ROADMAP.md) e o acompanha
 
 O nome `aiad` é publicado no GitHub Packages a cada tag de versão (`gem install aiad --source https://rubygems.pkg.github.com/Hirley`), mas o pacote carrega só o nome e a versão: as classes do projeto moram soltas em `lib/`, sem namespace, e embarcá-las poria `tool.rb`, `tracer.rb` e companhia no load path de quem instalasse. A aplicação continua sendo rodada por Docker — ver [Setup](#setup).
 
+## Objetivos e não-objetivos
+
+Esta seção existe porque a falta dela já tinha consequência: sem escopo escrito, toda auto-revisão produzia
+achado de superfície de produção para um app que não sai do laptop, e cada um parecia merecer prioridade. Uma
+issue que só faz sentido sob um objetivo que o projeto não tem é ruído com aparência de dívida.
+
+**O objetivo é aprender construindo, e deixar cada decisão legível.** A stack de RAG é escrita do zero — sem
+framework de orquestração — para que cada peça possa ser explicada: os cabeçalhos de classe registram a decisão
+tomada **e a alternativa rejeitada**, o comportamento entra por TDD/BDD, e o que pode falhar em silêncio ganha
+log e métrica. A régua é "a decisão está explicada e medida", não "sobrevive a produção".
+
+Os não-objetivos abaixo são decisões, não esquecimentos. Cada um já está encodado em alguma escolha do código; o
+que faltava era dizê-lo em voz alta.
+
+| Não-objetivo | Onde isso já está decidido |
+| --- | --- |
+| **Deploy público** | O compose publica **só em `127.0.0.1`** (API e Grafana), e a chave é digitada à mão no console. Não há modelo de ameaça com atacante anônimo na internet. |
+| **Multi-tenant** | Uma coleção só, e os escopos são de **ação** (`read`, `write`, `metrics`), nunca de dono. Duas pessoas com a mesma chave veem o mesmo acervo, por construção. |
+| **Ciclo de vida de credencial** | O `ApiKeyStore` guarda digest e compara em tempo constante: ele responde "esta chave vale?", e nunca "de quem é, quando expira, como se revoga". TLS, rotação e emissão ficam fora. |
+| **Alta disponibilidade e vários workers** | Limite **aceito**, já documentado no `Api::LexicalIndexWarmup`: com `workers > 1` cada worker atende uma ingestão diferente e as cópias do índice BM25 divergem em silêncio. Resolver exige índice compartilhado ou vetores esparsos do Qdrant. Não é bug pendente. |
+| **Acervo como dado sensível** | O acervo é tratado como **fixture**, não como base de dados real — ver a ressalva abaixo, que é a única desta lista que não era óbvia. |
+
+### A ressalva sobre o acervo
+
+Duas decisões do projeto parecem se contradizer, e vale dizer por que não se contradizem — **dada** a linha acima.
+
+O `PrometheusEvaluationLog` recusa mandar pergunta e resposta para métrica, citando cardinalidade infinita e o
+risco de o conteúdo ficar guardado para sempre num sistema que ninguém trata como base de dados pessoais. Já o
+`LangfuseExporter`, com as duas chaves configuradas, manda para um serviço externo a pergunta, a resposta **e o
+prompt** — e o prompt carrega os trechos recuperados do acervo.
+
+As duas convivem porque o acervo aqui é material de teste: política de férias inventada, não prontuário. Métrica
+e trace também têm naturezas diferentes — uma tem retenção indefinida e cardinalidade que explode, a outra é um
+armazenamento feito para conteúdo e **opcional por configuração**.
+
+O que muda se alguém apontar isto para documento real: o Langfuse deixa de ser um detalhe de configuração e
+passa a ser uma decisão de tratamento de dados, e o console — que hoje não guarda nada além da chave em memória
+— passa a precisar de um modelo de ameaça de verdade. Nesse dia, esta seção é o que deve ser reescrito primeiro.
+
+### A regra que isto habilita
+
+**Issue que só existe sob um não-objetivo fecha como `wontfix`, com link para esta seção** — em vez de ficar no
+backlog dando a impressão de dívida.
+
+Isso não torna sem valor toda proposta que encoste num não-objetivo. A [#25](https://github.com/Hirley/AIAD/issues/25)
+é o exemplo: o argumento dela era defesa em profundidade contra um XSS que ninguém tem, mas metade do trabalho
+era consertar documentação enganosa e um cenário de Cucumber que fingia testar segurança. Essa metade valia sob
+qualquer escopo. O critério é o que sobra depois de tirar o que só o não-objetivo justificava.
+
 ## Componentes
 
 | Classe | Responsabilidade |
