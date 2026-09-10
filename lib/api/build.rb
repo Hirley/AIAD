@@ -61,7 +61,7 @@ module Api
     llm = llm_for(env)
     retrieval = Retrieval.build(env: env, llm: llm, options: options, collection: collection,
                                 registry: registry, logs: logs)
-    tracer = Observability.tracer(registry: registry, env: env)
+    tracer = Observability.tracer(registry: registry, env: env, logs: logs)
 
     App.new(etl: retrieval[:etl], collection: collection,
             rag: rag_pipeline(retriever: retrieval[:retriever], llm: llm, collection: collection, options: options,

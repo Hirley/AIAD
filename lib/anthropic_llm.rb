@@ -68,14 +68,31 @@ class AnthropicLlm
   end
   private_class_method :setting
 
+  # A interface mínima continua sendo `complete(prompt) -> String`: é o que o
+  # `ExtractiveLlm`, o `LlmJudge`, o `ReactAgent` e o `ModelRouter` cumprem, e
+  # mudar o tipo de retorno quebraria os quatro de uma vez.
   def complete(prompt)
+    complete_with_usage(prompt).first
+  end
+
+  # Quem quer o uso **medido** pergunta por este método; quem não o tem
+  # continua estimado. É o mesmo desenho do `@llm.respond_to?(:model)` que o
+  # `RagPipeline` já usa para o rótulo do modelo — capacidade opcional
+  # perguntada por quem chama, sem caso especial por implementação.
+  #
+  # O uso volta **junto com o texto**, e não guardado no objeto. Um
+  # `last_usage` de instância seria corrida entre threads: o Puma roda cinco
+  # por processo, e a resposta de uma pergunta acabaria contando os tokens de
+  # outra — um erro de contabilidade que só aparece sob carga, que é
+  # exatamente quando ele custa dinheiro.
+  def complete_with_usage(prompt)
     response = perform(request_for(prompt))
     status = response.code.to_i
     payload = parse(response.body)
 
     raise Error, failure_message(status, payload) unless (200..299).cover?(status)
 
-    text_from(payload)
+    [text_from(payload), usage_from(payload)]
   rescue Timeout::Error, IOError, SystemCallError => e
     raise Error, "falha de rede ao chamar o modelo: #{e.class}"
   end
@@ -104,6 +121,26 @@ class AnthropicLlm
                                           open_timeout: @open_timeout, read_timeout: @read_timeout) do |http|
       http.request(request)
     end
+  end
+
+  # `input_tokens` e `output_tokens` são o vocabulário do provedor; o resto do
+  # projeto fala `prompt_tokens` e `completion_tokens`, e a tradução mora aqui
+  # para o nome de uma API não vazar pipeline adentro.
+  #
+  # `nil` quando a resposta não traz o bloco: devolver zeros com
+  # `measured: true` seria afirmar que o provedor contou zero token, e quem
+  # chama trataria uma ausência como uma medição. Sem o bloco, a estimativa do
+  # `TokenCounter` continua valendo — é pior que o número real, e é honesta
+  # sobre isso.
+  def usage_from(payload)
+    usage = payload[:usage]
+    return nil unless usage.is_a?(Hash) && (usage[:input_tokens] || usage[:output_tokens])
+
+    prompt_tokens = usage[:input_tokens].to_i
+    completion_tokens = usage[:output_tokens].to_i
+
+    { prompt_tokens: prompt_tokens, completion_tokens: completion_tokens,
+      total_tokens: prompt_tokens + completion_tokens, measured: true }
   end
 
   # A resposta vem como uma lista de blocos; só os de texto interessam, e eles

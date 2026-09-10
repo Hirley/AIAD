@@ -122,4 +122,51 @@ RSpec.describe AnthropicLlm do
       expect(llm.inspect).to include('claude-sonnet-5')
     end
   end
+
+  # A resposta da Anthropic traz `usage` com o que foi cobrado, e o parse
+  # jogava fora -- o painel de tokens mostrava a estimativa de ~4 caracteres
+  # por token do TokenCounter como se fosse medição.
+  describe '#complete_with_usage' do
+    let(:transport) do
+      FakeHttpClient.new(code: '200',
+                         body: JSON.generate(content: [{ type: 'text', text: 'trinta dias' }],
+                                             usage: { input_tokens: 412, output_tokens: 37 }))
+    end
+
+    it 'returns what the provider counted, not an estimate' do
+      _text, usage = llm.complete_with_usage('quantos dias de férias?')
+
+      expect(usage).to eq(prompt_tokens: 412, completion_tokens: 37, total_tokens: 449, measured: true)
+    end
+
+    it 'returns the text alongside the usage' do
+      text, = llm.complete_with_usage('quantos dias de férias?')
+
+      expect(text).to eq('trinta dias')
+    end
+
+    # Devolver zeros com `measured: true` seria afirmar que o provedor contou
+    # zero token. Sem o bloco, quem chama volta para a estimativa sabendo que é
+    # estimativa.
+    context 'quando a resposta vem sem o bloco de contagem' do
+      let(:transport) do
+        FakeHttpClient.new(code: '200', body: JSON.generate(content: [{ type: 'text', text: 'trinta dias' }]))
+      end
+
+      it 'reports no usage instead of reporting zero' do
+        _text, usage = llm.complete_with_usage('quantos dias de férias?')
+
+        expect(usage).to be_nil
+      end
+    end
+  end
+
+  # O uso volta junto com o texto de propósito: guardado no objeto, seria
+  # corrida entre as cinco threads do Puma, e a resposta de uma pergunta
+  # contaria os tokens de outra.
+  it 'keeps no per-call state on the object' do
+    llm.complete_with_usage('primeira')
+
+    expect(llm.instance_variables).not_to include(:@usage, :@last_usage)
+  end
 end

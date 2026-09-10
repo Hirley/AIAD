@@ -265,4 +265,42 @@ RSpec.describe RagPipeline do
       expect(traced[:answer]).to eq(plain[:answer])
     end
   end
+
+  # Os tokens no painel eram sempre estimativa, mesmo com um modelo que informa
+  # o que cobrou. A escolha é por capacidade, não por classe: quem sabe
+  # informar informa, quem não sabe continua estimado -- o `FakeLlm`, como o
+  # `ExtractiveLlm`, não sabe.
+  describe 'de onde vem a contagem de tokens' do
+    let(:medido) { { prompt_tokens: 412, completion_tokens: 37, total_tokens: 449, measured: true } }
+
+    def usage_from(model)
+      described_class.new(retriever: retriever, llm: model, collection: 'documentos')
+                     .answer('Quantos dias de férias?')[:usage]
+    end
+
+    it 'prefers what the provider reported over the estimate' do
+      informante = Class.new do
+        def initialize(usage) = @usage = usage
+        def complete(prompt) = complete_with_usage(prompt).first
+        def complete_with_usage(_prompt) = ['Trinta dias por ano [1].', @usage]
+      end
+
+      expect(usage_from(informante.new(medido))).to eq(medido)
+    end
+
+    it 'marks the estimate as an estimate when the model cannot report' do
+      expect(usage_from(FakeLlm.new)).to include(measured: false)
+    end
+
+    # Modelo que sabe informar mas cuja resposta veio sem contagem: a
+    # estimativa volta a valer, e diz que é estimativa.
+    it 'falls back to the estimate when the reported usage is missing' do
+      calado = Class.new do
+        def complete(prompt) = complete_with_usage(prompt).first
+        def complete_with_usage(_prompt) = ['Trinta dias por ano [1].', nil]
+      end
+
+      expect(usage_from(calado.new)).to include(measured: false)
+    end
+  end
 end

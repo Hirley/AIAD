@@ -602,6 +602,19 @@ Decisões que valem registrar:
 - **Custo sai da mesma conta do `UsageMeter`.** Duas definições de "quanto custou" divergiriam na
   primeira mudança de tabela de preço. Sem preço configurado o custo é zero explícito — e o
   `ExtractiveLlm`, que é o padrão, realmente não custa nada.
+- **O preço vem do ambiente, e não há tabela embutida.** `AIAD_MODEL_PRICES=modelo:entrada:saida`, em
+  dólares por milhão de tokens, na mesma forma do `AIAD_API_KEYS`. Tabela no código envelheceria em
+  silêncio na primeira mudança de preço do provedor, e custo errado com cara de certo é pior do que custo
+  zero — ninguém confere um número plausível. Sem configuração o custo é zero, e a partida escreve uma
+  linha `model_prices` em nível `warn` **quando há `ANTHROPIC_API_KEY`**, porque aí o zero num painel de
+  custo se leria como "saiu de graça". Sem modelo de verdade não sai linha: ali o zero é a verdade.
+- **Token medido ganha de token estimado, e dá para saber qual é qual.** O `AnthropicLlm` passou a
+  devolver o `usage` que a resposta traz, por um `complete_with_usage` que quem chama pergunta se existe
+  — a interface mínima continua sendo `complete(prompt) -> String`, que é o que o `ExtractiveLlm`, o
+  `LlmJudge`, o `ReactAgent` e o `ModelRouter` cumprem. O uso volta **junto com o texto**, nunca guardado
+  no objeto: com cinco threads por processo, um `last_usage` de instância faria a resposta de uma
+  pergunta contar os tokens de outra. Quem não sabe informar continua estimado pelo `TokenCounter`, e o
+  `measured:` no uso diz de onde veio o número.
 
 Diferente do `SessionMetrics`, que guarda uma entrada por chamada e por sessão em memória, este caminho
 tem memória fixa: um punhado de séries, não importa quantas perguntas cheguem. Quem guarda série temporal
