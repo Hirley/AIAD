@@ -100,7 +100,12 @@ A stack de observabilidade completa (Prometheus, Loki via Promtail, Grafana com 
   `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>` (ou `Claude Sonnet 5` / `Claude 5`, conforme o
   modelo que fez o trabalho).
 - **Issues e corpo de PR usam acentuação normal** — só o commit é ASCII. Não misture os dois registros.
-  PR referencia a issue com "Fecha #N."
+- **O PR fecha a issue com `Closes #N.`, em inglês** — o resto do corpo continua em português. Esta linha
+  é mecanismo do GitHub, não prosa: ele só reconhece `close/closes/closed`, `fix/fixes/fixed` e
+  `resolve/resolves/resolved`. A convenção anterior era "Fecha #N", e ela **nunca fechou nada**. Medido no
+  próprio repositório, mesmo fluxo, só a palavra mudando: o #29 e o #30 diziam "Fecha" e as issues #22,
+  #23 e #25 continuaram abertas depois do merge, fechadas à mão cinco minutos depois; o #34 e o #38
+  disseram "Closes" e a #24, a #35 e a #36 fecharam **um segundo** após o merge, sozinhas.
 - Nunca `--amend` em commit já publicado, nunca `push --force` sem pedir, nunca `--no-verify`.
 - Antes de qualquer comando que descarte trabalho não commitado (`checkout`/`restore`/`reset`/`clean`),
   `git status` primeiro.
